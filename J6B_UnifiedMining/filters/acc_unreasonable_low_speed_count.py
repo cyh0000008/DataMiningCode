@@ -34,9 +34,9 @@ class AccUnreasonableLowSpeedCountMetric(BaseMetric):
         "curv_speed_limit",
     )
     uses_h5_stitching = True
-    stable_duration_s = 6.0
-    stable_range_kph = 2.0
-    min_deficit_kph = 5.0
+    stable_duration_s = 8.0
+    stable_range_kph = 1.5
+    min_deficit_kph = 8.0
     min_display_speed_kph = 5.0
     set_speed_stable_range_kph = 0.1
     min_set_speed_kph = 1.0
@@ -143,7 +143,7 @@ class AccUnreasonableLowSpeedCountMetric(BaseMetric):
                     candidate_speed = float(display_speed[candidate])
                     next_min = min(min_speed, candidate_speed)
                     next_max = max(max_speed, candidate_speed)
-                    if next_max - next_min > self.stable_range_kph:
+                    if next_max - next_min >= self.stable_range_kph:
                         break
                     min_speed = next_min
                     max_speed = next_max

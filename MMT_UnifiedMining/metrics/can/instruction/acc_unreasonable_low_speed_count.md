@@ -51,7 +51,7 @@ H5 时间戳单位为秒，topic 文本中的 `stamp` 或 `sensor_timestamp_us` 
 
 ## 5. 有效采样点条件
 
-一个采样点必须同时满足以下条件，才会进入后续 6 秒稳定低速窗口判断：
+一个采样点必须同时满足以下条件，才会进入后续 8 秒稳定低速窗口判断：
 
 - ACC active：`IACCAct376 == true`
 - 驾驶员未油门接管：`IAccPdlOvrrdAtv == false`
@@ -109,14 +109,14 @@ fusion object 中只考虑可用目标：
 
 ## 9. 不合理低速窗口判定
 
-在连续有效采样点中，按 SetSpeed 不变的区间搜索 6 秒窗口。一个窗口必须同时满足：
+在连续有效采样点中，按 SetSpeed 不变的区间搜索 8 秒窗口。一个窗口必须同时满足：
 
-- 窗口持续时间：`duration >= 6s`
+- 窗口持续时间：`duration >= 8s`
 - 窗口内 SetSpeed 保持不变
 - 表显车速最低值：`v_min > 5kph`
 - 表显车速最高值：`v_max > 5kph`
-- 表显车速波动：`v_max - v_min <= 2kph`
-- 低于设定速度：`SetSpeed - v_max >= 5kph`
+- 表显车速波动：`v_max - v_min < 1.5kph`
+- 低于设定速度：`SetSpeed - v_max >= 8kph`
 
 满足条件后，该窗口形成一个不合理低速候选场景。
 
@@ -185,7 +185,7 @@ severity = max(SetSpeed - v_max, 0)
 每个场景输出类似：
 
 ```text
-[Scene start=9105.235, end=9111.333, duration=6.098, set_speed=60.0, stable_display_speed=7.3, v_min=6.0, v_max=8.0, display_range=2.0, set_speed_gap=52.0, min_curvature_limit=0.0, max_topic_gap_ms=20.0, max_fusion_gap_ms=15.0, merged_windows=1, low_speed=True, severity=52.000]
+[Scene start=9105.235, end=9113.333, duration=8.098, set_speed=60.0, stable_display_speed=7.5, v_min=7.0, v_max=8.0, display_range=1.0, set_speed_gap=52.0, min_curvature_limit=0.0, max_topic_gap_ms=20.0, max_fusion_gap_ms=15.0, merged_windows=1, low_speed=True, severity=52.000]
 ```
 
 字段含义：

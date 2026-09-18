@@ -17,7 +17,7 @@ ACC_ACTIVE_SIGNAL = "Adaptive_Cruise_Disp_Stat.IACCAct376"
 PEDAL_OVERRIDE_SIGNAL = "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
 
 DEFAULT_MIN_STABLE_DURATION_SECONDS = 8.0
-DEFAULT_STABLE_RANGE_KPH = 2.0
+DEFAULT_STABLE_RANGE_KPH = 1.5
 DEFAULT_MIN_SET_SPEED_GAP_KPH = 8.0
 DEFAULT_MIN_MOVING_DISPLAY_SPEED_KPH = 5.0
 DEFAULT_TOPIC_MATCH_TOLERANCE_MS = 300.0
@@ -321,7 +321,7 @@ def _collect_stable_speed_scenes(
                 if (
                     v_min > min_moving_display_speed_kph
                     and v_max > min_moving_display_speed_kph
-                    and display_range <= stable_range_kph
+                    and display_range < stable_range_kph
                     and set_speed_gap >= min_set_speed_gap_kph
                 ):
                     _append_scene_if_qualified(
@@ -387,7 +387,7 @@ def _append_scene_if_qualified(
     if (
         v_min <= min_moving_display_speed_kph
         or v_max <= min_moving_display_speed_kph
-        or display_range > stable_range_kph
+        or display_range >= stable_range_kph
         or set_speed_gap < min_set_speed_gap_kph
     ):
         return
