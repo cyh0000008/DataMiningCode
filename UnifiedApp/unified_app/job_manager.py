@@ -28,6 +28,7 @@ from .job_spec import (
 )
 from .paths import AppSettings
 from .progress_parser import parse_line
+from .report_archive import archive_report
 
 
 STATUS_QUEUED = "排队中"
@@ -60,6 +61,8 @@ class Job:
     exit_code: Optional[int] = None
     report_path: Optional[Path] = None
     pending_compare: Optional[Dict[str, Any]] = None
+    report_archive: Optional[Dict[str, str]] = None
+    archived_report_path: Optional[Path] = None
 
     @property
     def kind_label(self) -> str:
@@ -121,7 +124,15 @@ class JobManager(QObject):
             base_version=spec.compare_base_version,
             target_version=spec.compare_target_version,
         )
-        return self._submit(JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare)
+        report_archive = self._build_report_archive(
+            spec.raw_report_archive_dir,
+            spec.compare_target_vehicle,
+            spec.compare_target_date,
+            spec.compare_target_version,
+        )
+        return self._submit(
+            JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare, report_archive
+        )
 
     def submit_mmt(
         self,
@@ -156,7 +167,15 @@ class JobManager(QObject):
             base_version=spec.compare_base_version,
             target_version=spec.compare_target_version,
         )
-        return self._submit(JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare)
+        report_archive = self._build_report_archive(
+            spec.raw_report_archive_dir,
+            spec.compare_target_vehicle,
+            spec.compare_target_date,
+            spec.compare_target_version,
+        )
+        return self._submit(
+            JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare, report_archive
+        )
 
     def submit_compare(self, python_exe: str, compare_dir: Path, spec: CompareJobSpec) -> str:
         title = spec.task_name.strip() or f"对比报告 {time.strftime('%H:%M:%S')}"
@@ -242,6 +261,24 @@ class JobManager(QObject):
         )
         return {"python_exe": compare_python, "compare_dir": compare_dir, "spec": compare_spec}
 
+    @staticmethod
+    def _build_report_archive(
+        archive_dir: str,
+        target_vehicle: str,
+        target_date: str,
+        target_version: str,
+    ) -> Optional[Dict[str, str]]:
+        if not archive_dir.strip():
+            return None
+        if not all((target_vehicle.strip(), target_date.strip(), target_version.strip())):
+            raise ValueError("启用原始报告额外保存时，请填写 Target 的车型、日期和软件版本")
+        return {
+            "archive_dir": archive_dir.strip(),
+            "vehicle": target_vehicle.strip(),
+            "date": target_date.strip(),
+            "version": target_version.strip(),
+        }
+
     def _submit(
         self,
         kind: str,
@@ -250,6 +287,7 @@ class JobManager(QObject):
         cwd: Path,
         temp_files: List[Path],
         pending_compare: Optional[Dict[str, Any]] = None,
+        report_archive: Optional[Dict[str, str]] = None,
     ) -> str:
         job_id = uuid.uuid4().hex
         job = Job(
@@ -260,6 +298,7 @@ class JobManager(QObject):
             cwd=cwd,
             temp_files=temp_files,
             pending_compare=pending_compare,
+            report_archive=report_archive,
         )
         self._jobs[job_id] = job
         self._queue.append(job_id)
@@ -316,7 +355,12 @@ class JobManager(QObject):
             if update.current is not None and update.total is not None:
                 job.progress_text = f"{update.current}/{update.total}"
             if update.report_path:
-                job.report_path = Path(update.report_path)
+                captured_path = Path(update.report_path)
+                job.report_path = (
+                    captured_path
+                    if captured_path.is_absolute()
+                    else (job.cwd / captured_path).resolve()
+                )
             self.job_log.emit(job_id, line)
         self.job_updated.emit(job_id)
 
@@ -343,11 +387,40 @@ class JobManager(QObject):
         else:
             job.status = STATUS_FAILED
         self._cleanup_temp_files(job)
+        if job.status == STATUS_SUCCESS and job.report_archive is not None:
+            self._archive_report(job)
         self.job_updated.emit(job_id)
         self.job_finished.emit(job_id)
         if job.status == STATUS_SUCCESS and job.pending_compare is not None:
             self._trigger_auto_compare(job)
         self._try_start_next()
+
+    def _archive_report(self, job: Job) -> None:
+        options = job.report_archive
+        if options is None:
+            return
+        if job.report_path is None:
+            message = "[原始报告归档] 未能从输出中捕获原始 XLSX 路径，跳过额外保存。"
+            job.log_lines.append(message)
+            self.job_log.emit(job.id, message)
+            return
+        try:
+            archived_path = archive_report(
+                job.report_path,
+                options["archive_dir"],
+                options["vehicle"],
+                options["date"],
+                options["version"],
+            )
+        except (OSError, ValueError) as exc:
+            message = f"[原始报告归档] 保存失败：{exc}"
+            job.log_lines.append(message)
+            self.job_log.emit(job.id, message)
+            return
+        job.archived_report_path = archived_path
+        message = f"[原始报告归档] 已额外保存：{archived_path}"
+        job.log_lines.append(message)
+        self.job_log.emit(job.id, message)
 
     def _trigger_auto_compare(self, job: Job) -> None:
         pending = job.pending_compare

@@ -42,6 +42,7 @@ class J6BJobSpec:
     compare_target_date: str = ""
     compare_base_version: str = ""
     compare_target_version: str = ""
+    raw_report_archive_dir: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -76,6 +77,7 @@ class MMTJobSpec:
     compare_target_date: str = ""
     compare_base_version: str = ""
     compare_target_version: str = ""
+    raw_report_archive_dir: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

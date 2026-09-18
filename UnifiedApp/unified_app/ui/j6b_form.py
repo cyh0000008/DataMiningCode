@@ -147,6 +147,15 @@ class J6BForm(QWidget):
         header_grid.addWidget(self.compare_target_version_edit, 3, 2)
         compare_form.addRow(header_group)
 
+        archive_row = QHBoxLayout()
+        self.raw_report_archive_dir_edit = QLineEdit()
+        self.raw_report_archive_dir_edit.setPlaceholderText("可选；按 Target 的车型-日期-版本.xlsx 另存原始报告")
+        archive_row.addWidget(self.raw_report_archive_dir_edit)
+        archive_btn = QPushButton("浏览…")
+        archive_btn.clicked.connect(self._browse_raw_report_archive_dir)
+        archive_row.addWidget(archive_btn)
+        compare_form.addRow("原始报告额外保存目录：", self._wrap(archive_row))
+
         layout.addWidget(compare_group)
 
         run_row = QHBoxLayout()
@@ -193,6 +202,13 @@ class J6BForm(QWidget):
         if path:
             self.compare_base_edit.setText(path)
 
+    def _browse_raw_report_archive_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self, "选择原始报告额外保存目录", self.raw_report_archive_dir_edit.text()
+        )
+        if path:
+            self.raw_report_archive_dir_edit.setText(path)
+
     def _collect_spec(self) -> J6BJobSpec:
         input_paths: List[str] = [self.input_list.item(i).text() for i in range(self.input_list.count())]
         return J6BJobSpec(
@@ -213,6 +229,7 @@ class J6BForm(QWidget):
             compare_target_date=self.compare_target_date_edit.text().strip(),
             compare_base_version=self.compare_base_version_edit.text().strip(),
             compare_target_version=self.compare_target_version_edit.text().strip(),
+            raw_report_archive_dir=self.raw_report_archive_dir_edit.text().strip(),
         )
 
     def _apply_spec(self, spec: J6BJobSpec) -> None:
@@ -238,6 +255,7 @@ class J6BForm(QWidget):
         self.compare_target_date_edit.setText(spec.compare_target_date)
         self.compare_base_version_edit.setText(spec.compare_base_version)
         self.compare_target_version_edit.setText(spec.compare_target_version)
+        self.raw_report_archive_dir_edit.setText(spec.raw_report_archive_dir)
 
     def _refresh_presets(self) -> None:
         current = self.preset_combo.currentText()
@@ -281,6 +299,15 @@ class J6BForm(QWidget):
         spec = self._collect_spec()
         if not spec.input_paths:
             QMessageBox.warning(self, "参数不完整", "请至少添加一个输入路径。")
+            return
+        if spec.raw_report_archive_dir and not all(
+            (spec.compare_target_vehicle, spec.compare_target_date, spec.compare_target_version)
+        ):
+            QMessageBox.warning(
+                self,
+                "参数不完整",
+                "启用原始报告额外保存时，请填写 Target 的车型、日期和软件版本。",
+            )
             return
         template_path = Path(spec.template_config_path or str(self._default_template_path()))
         try:
