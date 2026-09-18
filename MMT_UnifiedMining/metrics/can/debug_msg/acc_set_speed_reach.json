@@ -1,0 +1,13 @@
+{
+  "metric": "acc_set_speed_reach",
+  "axes1": [
+    "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1"
+  ],
+  "axes2": [
+    "Adaptive_Cruise_Disp_Stat.IACCDrvrSeltdSpd",
+    "Adaptive_Cruise_Disp_Stat.IACCAct376"
+  ],
+  "axes3": [
+    "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ]
+}

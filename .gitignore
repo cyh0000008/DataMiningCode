@@ -1,0 +1,34 @@
+# Python bytecode and local environments
+**/__pycache__/
+*.py[cod]
+**/.venv/
+**/venv/
+
+# Build and packaged application output
+**/build/
+**/dist/
+
+# Generated mining/comparison output
+**/outputs/
+**/reports/
+**/raw_results/
+**/Result*/
+**/.converted_reports/
+**/.codex_artifact_build/
+*.inspect.ndjson
+
+# Local runtime files
+*.log
+*.tmp
+*.bak
+~$*.xlsx
+
+# Local IDE and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# One-off analysis artifacts kept beside J6B source
+J6B_UnifiedMining/*.xlsx
+J6B_UnifiedMining/*_同步性检查.png

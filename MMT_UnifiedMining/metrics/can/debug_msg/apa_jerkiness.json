@@ -1,0 +1,26 @@
+{
+  "metric": "apa_jerkiness",
+  "axes1": [
+    "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
+  ],
+  "axes2": [
+    "APA_Brake_Propulsion_Torqu_1F0_M.IAPAPpTrq_SRPPpSysActReq"
+  ],
+  "axes3": [
+    "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ITransEstGear_ECP_H1"
+  ],
+  "axes4": [
+    "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1"
+  ],
+  "axes5": [
+    "APA_Brake_Propulsion_Torqu_1F0_M.IAPAPpTrq_SRPPpSysTrqReq",
+    "APA_Brake_Propulsion_Torqu_1F0_M.IAPABT_SRPBrkTrqReq",
+    "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrq"
+  ],
+  "axes6": [
+    "PPEI_Chassis_General_Data_5.IAvgWhlBrkPrsrEst_1"
+  ],
+  "axes7": [
+    "Advanced_Park_Assist_Status_190_M.IAPASP_APAStsAuth"
+  ]
+}

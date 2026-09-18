@@ -1,0 +1,18 @@
+{
+  "metric": "acc_override_brake_request_jerkiness",
+  "axes1": [
+    "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
+  ],
+  "axes2": [
+    "Adaptive_Cruise_Disp_Stat.IACCAct376"
+  ],
+  "axes3": [
+    "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ],
+  "axes4": [
+    "Adaptive_Cruise_Command_Ext_1A3_M.IACCBSCE_ACCAccl"
+  ],
+  "axes5": [
+    "PPEI_Engine_General_Status_1_082_M2.IAccActPos"
+  ]
+}

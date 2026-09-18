@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "output_filename": "bad_case_report.xlsx",
+  "default_rule": {
+    "severity_threshold": 0.0,
+    "severity_top_n": 10,
+    "max_cases": 10
+  },
+  "metric_rules": {}
+}

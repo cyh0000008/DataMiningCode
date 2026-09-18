@@ -1,0 +1,9 @@
+{
+  "metric": "acc_lost_arbitration",
+  "axes1": [
+    "PPEI_Adaptive_Cruise_Axl_Trq_Req_194_M.IACCATC_ACCAct"
+  ],
+  "axes2": [
+    "PPEI_Propulsion_General_Data_1_0C2_M.IACCATCS_RqStat"
+  ]
+}

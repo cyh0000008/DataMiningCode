@@ -1,0 +1,12 @@
+{
+  "metric": "acc_heavy_braking_after_override_release_count",
+  "axes1": [
+    "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
+  ],
+  "axes2": [
+    "Adaptive_Cruise_Disp_Stat.IACCAct376"
+  ],
+  "axes3": [
+    "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ]
+}

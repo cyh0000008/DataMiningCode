@@ -1,0 +1,21 @@
+{
+  "metric": "apa_parking_rollback_count",
+  "axes1": [
+    "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatLFHigFreq",
+    "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatRFHigFreq",
+    "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatLRHigFreq",
+    "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatRRHigFreq"
+  ],
+  "axes2": [
+    "PPEI_Vehicle_Speed_and_Distance_208_M2.IVehSpdAvgNDrvn"
+  ],
+  "axes3": [
+    "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelLFrtAuth",
+    "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRFrtAuth",
+    "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelLRrAuth",
+    "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRRrAuth"
+  ],
+  "axes4": [
+    "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ITransEstGear_ECP_H1"
+  ]
+}

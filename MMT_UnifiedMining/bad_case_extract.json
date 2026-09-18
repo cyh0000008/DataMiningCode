@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "output_file": "Bad_Case_Report",
+  "global_rule": {
+    "min_severity": 0,
+    "top_n": null,
+    "max_cases": 20,
+    "sort_by": "severity_desc"
+  },
+  "pipeline_rules": {
+    "can": {},
+    "topic": {}
+  },
+  "metric_rules": {
+    "can__acc_jerkiness": {
+      "min_severity": 0,
+      "top_n": 10,
+      "max_cases": 10
+    },
+    "topic__follow_stop_ttc": {
+      "min_severity": 0,
+      "top_n": 10,
+      "max_cases": 10
+    }
+  }
+}

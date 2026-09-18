@@ -1,0 +1,15 @@
+{
+  "metric": "acc_jerkiness",
+  "axes1": [
+    "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
+  ],
+  "axes2": [
+    "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1"
+  ],
+  "axes3": [
+    "Adaptive_Cruise_Disp_Stat.IACCAct376"
+  ],
+  "axes4": [
+    "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ]
+}

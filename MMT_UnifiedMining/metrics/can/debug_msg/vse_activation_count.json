@@ -1,0 +1,12 @@
+{
+  "metric": "vse_activation_count",
+  "axes1": [
+    "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
+  ],
+  "axes2": [
+    "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1"
+  ],
+  "axes3": [
+    "PPEI_Chassis_General_Data_3_0AC_M.IVSEAct"
+  ]
+}

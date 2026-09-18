@@ -1,0 +1,9 @@
+{
+  "metric": "apa_lost_arbitration",
+  "axes1": [
+    "APA_Brake_Propulsion_Torqu_1F0_M.IAPAPpTrq_SRPPpSysActReq"
+  ],
+  "axes2": [
+    "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ISuprRmtPrkPrplSysResp"
+  ]
+}

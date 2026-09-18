@@ -1,0 +1,68 @@
+{
+  "source_path": "/mnt/nas/L2pp_MBOX/PL061026",
+  "query_date": "20260722-20260723",
+  "query_software": "",
+  "max_depth": 4,
+  "suffix": "_done",
+  "output_dir": "/home/patac_data/DataMining_Longitudinal/DataMiningResult/MMT_Result/C1UL_0813_before",
+  "report_prefix": "Unified_Longitudinal_Report",
+  "file_pattern": "*.h5",
+  "pipelines": [
+    {
+      "name": "can",
+      "type": "can",
+      "enabled": true,
+      "func_folder_path": "metrics/can/code",
+      "default_metric_category": "MPI",
+      "enable_cross_done_continuation": true,
+      "cross_done_max_gap_seconds": 10,
+      "cross_done_context_seconds": 10,
+      "preprocess_signals": [
+        "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec",
+        "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1",
+        "Adaptive_Cruise_Disp_Stat.IACCDrvrSeltdSpd",
+        "Adaptive_Cruise_Disp_Stat.IACCAct376",
+        "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv",
+        "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatLFHigFreq",
+        "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatRFHigFreq",
+        "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatLRHigFreq",
+        "Wheel_Distance_Direction_Info_High_Frequency.IWhlRotDirStatRRHigFreq",
+        "PPEI_Vehicle_Speed_and_Distance_208_M2.IVehSpdAvgNDrvn",
+        "Adaptive_Cruise_Command_Ext_1A3_M.IACCBSCE_AutBrkTp",
+        "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelLFrtAuth",
+        "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRFrtAuth",
+        "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelLRrAuth",
+        "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRRrAuth",
+        "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ITransEstGear_ECP_H1",
+        "PPEI_Adaptive_Cruise_Axl_Trq_Req_194_M.IACCATC_ACCAct",
+        "PPEI_Propulsion_General_Data_1_0C2_M.IACCATCS_RqStat",
+        "Adaptive_Cruise_Command_Ext_1A3_M.IACCBSCE_ACCAccl",
+        "PPEI_Engine_General_Status_1_082_M2.IAccActPos",
+        "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrq",
+        "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrqV",
+        "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVl",
+        "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVlV",
+        "APA_Brake_Propulsion_Torqu_1F0_M.IAPABT_APAType",
+        "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ISuprRmtPrkPrplSysResp",
+        "Advanced_Park_Assist_Status_190_M.IAPASP_APAStsAuth",
+        "PPEI_Chassis_General_Data_3_0AC_M.IABSAtv",
+        "PPEI_Chassis_General_Data_3_0AC_M.ITCSysAtv",
+        "PPEI_Chassis_General_Data_3_0AC_M.IVSEAct"
+      ]
+    },
+    {
+      "name": "topic",
+      "type": "topic",
+      "enabled": true,
+      "func_folder_path": "metrics/topic/code",
+      "default_metric_category": "CPI",
+      "enable_cross_done_continuation": true,
+      "cross_done_max_gap_seconds": 10,
+      "cross_done_context_seconds": 10,
+      "cross_done_metric_names": [
+        "*"
+      ],
+      "skip_empty_topic_frames": true
+    }
+  ]
+}

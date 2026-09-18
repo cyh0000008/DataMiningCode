@@ -1,0 +1,232 @@
+{
+  "input_path": [
+    "F:/数据挖掘/DataMiningData/J6B_Data/ES27PV011/20260827-E2LB-2-ES27PV011_parsed",
+    "F:/数据挖掘/DataMiningData/J6B_Data/ES27PV011/20260828-E2LB-2-ES27PV011_parsed"
+  ],
+  "date": "",
+  "output_dir": "F:/数据挖掘/DataMiningResult/J6B/CompareCheck_0827_0828",
+  "report_name": "Longitudinal_CPI_Report_CompareCheck",
+  "enabled_metrics": [
+    "all"
+  ],
+  "metric_signal_scope": "all",
+  "metric_signal_scope_options": [
+    "all",
+    "debugcan_only",
+    "pcan_ccan_only"
+  ],
+  "signals": {
+    "acceleration": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPri",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPri",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPri",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPri"
+    ],
+    "acceleration_valid": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPriV",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPriV",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPriV",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x038_IMU_YawLonAcc_0x038/signals/IIMULonAccPriV"
+    ],
+    "odometer": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdo",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdo",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdo",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdo"
+    ],
+    "odometer_valid": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdoV",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdoV",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdoV",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x538_VehOdo_0x538/signals/IVehOdoV"
+    ],
+    "ego_speed": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvn_1",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvn_1",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvn_1",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvn_1"
+    ],
+    "ego_speed_valid": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvnV_1",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvnV_1",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvnV_1",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x209_VehSpd_Dist_0x209/signals/IVehSpdAvgDrvnV_1"
+    ],
+    "ego_speed_non_driven": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x208_VehSpd_Dist_0x208/signals/IVehSpdAvgNDrvn",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x208_VehSpd_Dist_0x208/signals/IVehSpdAvgNDrvn",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x208_VehSpd_Dist_0x208/signals/IVehSpdAvgNDrvn",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x208_VehSpd_Dist_0x208/signals/IVehSpdAvgNDrvn"
+    ],
+    "stationary_state": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x044_Auto_BrkSt_0x044/signals/IVehMvngStat",
+    "set_speed": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCDrvrSeltdSpd",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCDrvrSeltdSpd",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCDrvrSeltdSpd"
+    ],
+    "acc_active": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCAct376",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCAct376",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x376_ACC_DispSt_0x376/signals/IACCAct376"
+    ],
+    "pedal_override": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IAccPdlOvrrdAtv",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IAccPdlOvrrdAtv",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IAccPdlOvrrdAtv",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IAccPdlOvrrdAtv"
+    ],
+    "abs_active_primary": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IABSAtv",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IABSAtv",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IABSAtv",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IABSAtv"
+    ],
+    "abs_active_ice2": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AE_Chassis_info_0x0AE/signals/IABSAtv_ICE2",
+    "tcs_active_primary": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/ITCSysAtv",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/ITCSysAtv",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/ITCSysAtv",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/ITCSysAtv"
+    ],
+    "tcs_active_ice2": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AE_Chassis_info_0x0AE/signals/ITCSysAtv_ICE2",
+    "vse_active_primary": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IVSEAct",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IVSEAct",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IVSEAct",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AC_Chassis_info_0x0AC/signals/IVSEAct"
+    ],
+    "vse_active_ice2": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0AE_Chassis_info_0x0AE/signals/IVSEAct_ICE2",
+    "acc_request_state": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IACCATCS_RqStat",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IACCATCS_RqStat",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IACCATCS_RqStat",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0C2_Prop_Info_0x0C2/signals/IACCATCS_RqStat"
+    ],
+    "brake_request_type": [
+      "ch4/CAN_CB/SGM_C1UL_CB_CAN_0227/0x0B0_ADSCmd_Ext_0x0B0/signals/IACCBSCE_AutBrkTp1",
+      "ch2/CAN_CB/SGM_C1UL_CB_CAN_0227/0x0B0_ADSCmd_Ext_0x0B0/signals/IACCBSCE_AutBrkTp1"
+    ],
+    "brake_request_accel": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1A3_ACC_CmdExt_0x1A3/signals/IACCBSCE_ACCAccl",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1A3_ACC_CmdExt_0x1A3/signals/IACCBSCE_ACCAccl",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1A3_ACC_CmdExt_0x1A3/signals/IACCBSCE_ACCAccl"
+    ],
+    "accelerator_pedal_pos": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x082_EngSt_0x082/signals/IAccActPos",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x082_EngSt_0x082/signals/IAccActPos",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x082_EngSt_0x082/signals/IAccActPos",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x082_EngSt_0x082/signals/IAccActPos"
+    ],
+    "actual_drive_torque": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrq",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrq",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrq",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrq"
+    ],
+    "actual_drive_torque_valid": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrqV",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrqV",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrqV",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x08D_EngTrqSt_0x08D/signals/IActAxleTrqV"
+    ],
+    "control_drive_request_torque": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x194_ACC_AxlTrqReq_0x194/signals/IACCATC_AxlTrqRq",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x194_ACC_AxlTrqReq_0x194/signals/IACCATC_AxlTrqRq",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x194_ACC_AxlTrqReq_0x194/signals/IACCATC_AxlTrqRq",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x194_ACC_AxlTrqReq_0x194/signals/IACCATC_AxlTrqRq"
+    ],
+    "actual_brake_torque": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVl",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVl",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVl",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVl"
+    ],
+    "actual_brake_torque_valid": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVlV",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVlV",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVlV",
+      "ch1/CAN_PB/SGM_C1UL_PB_CAN_0227/0x1B4_Chassis_info_0x1B4/signals/ICSTBATS_TrqVlV"
+    ],
+    "control_brake_request_torque": [
+      "ch4/CAN_CB/SGM_C1UL_CB_CAN_0227/0x0B0_ADSCmd_Ext_0x0B0/signals/IACCBSCE_ACCTrq1",
+      "ch2/CAN_CB/SGM_C1UL_CB_CAN_0227/0x0B0_ADSCmd_Ext_0x0B0/signals/IACCBSCE_ACCTrq1"
+    ],
+    "wheel_dir_lf": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0A8_WhlDir_Info_0x0A8/signals/IWhlRotDirStatLFHigFreq",
+    "wheel_dir_rf": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0A8_WhlDir_Info_0x0A8/signals/IWhlRotDirStatRFHigFreq",
+    "wheel_dir_lr": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0A8_WhlDir_Info_0x0A8/signals/IWhlRotDirStatLRHigFreq",
+    "wheel_dir_rr": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0A8_WhlDir_Info_0x0A8/signals/IWhlRotDirStatRRHigFreq",
+    "wheel_speed_lf": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x031_Chassis_Info_0x031/signals/IWhlAngVelLFrtAuth",
+    "wheel_speed_rf": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x031_Chassis_Info_0x031/signals/IWhlAngVelRFrtAuth",
+    "wheel_speed_lr": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x031_Chassis_Info_0x031/signals/IWhlAngVelLRrAuth",
+    "wheel_speed_rr": "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x031_Chassis_Info_0x031/signals/IWhlAngVelRRrAuth",
+    "gear": [
+      "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0D7_Trs_Status_2_0x0D7/signals/ITransEstGear_ECP_H1",
+      "ch4/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0D7_Trs_Status_2_0x0D7/signals/ITransEstGear_ECP_H1",
+      "ch2/CAN_PB/SGM_C1UL_PB_CAN_0227/0x0D7_Trs_Status_2_0x0D7/signals/ITransEstGear_ECP_H1"
+    ],
+    "slope_deg": [
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p4p1/0x3E3_MPC_DebugMsg_Reserved_18/signals/Debug_single_Reserved_51",
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p8/0x3E3_MPC_DebugMsg_Reserved_18/signals/Debug_single_Reserved_51"
+    ],
+    "front_target_id": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x687_Forward_Looking_Target_1_Res/signals/FLT1_Global_ID",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x687_Forward_Looking_Target_1_Res/signals/FLT1_Global_ID"
+    ],
+    "front_range": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x681_Forward_Looking_Target_1/signals/FLT1_Long_Range",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x681_Forward_Looking_Target_1/signals/FLT1_Long_Range"
+    ],
+    "front_lat_range": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x681_Forward_Looking_Target_1/signals/FLT1_Lat_Range",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x681_Forward_Looking_Target_1/signals/FLT1_Lat_Range"
+    ],
+    "front_velocity_abs": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x681_Forward_Looking_Target_1/signals/FLT1_Long_Velocity",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x681_Forward_Looking_Target_1/signals/FLT1_Long_Velocity"
+    ],
+    "front_accel": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x687_Forward_Looking_Target_1_Res/signals/FLT1_Long_Accel",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x687_Forward_Looking_Target_1_Res/signals/FLT1_Long_Accel"
+    ],
+    "curv_speed_limit": [
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p4p1/0x3DE_MPC_DebugMsg_Reserved_14/signals/Debug_uint_Reserved_48",
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p8/0x3DE_MPC_DebugMsg_Reserved_14/signals/Debug_uint_Reserved_48"
+    ],
+    "curv_enable": [
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p4p1/0x3DF_MPC_DebugMsg_Reserved_15/signals/Debug_uint_Reserved_49",
+      "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p8/0x3DF_MPC_DebugMsg_Reserved_15/signals/Debug_uint_Reserved_49"
+    ],
+    "left_lane_c2": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0xB00_Left_Lane_Track_Coeff/signals/LaneModelC2",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0xB00_Left_Lane_Track_Coeff/signals/LaneModelC2"
+    ],
+    "right_lane_c2": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0xB01_Right_Lane_Track_Coeff/signals/LaneModelC2",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0xB01_Right_Lane_Track_Coeff/signals/LaneModelC2"
+    ]
+  },
+  "optional_signals": {
+    "flt1_cutin_flag": [
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0x687_Forward_Looking_Target_1_Res/signals/FLT1_CUTIN_Flag",
+      "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0x687_Forward_Looking_Target_1_Res/signals/FLT1_CUTIN_Flag"
+    ]
+  },
+  "defaults": {
+    "stationary_value": 1.0,
+    "flt1_cutin_flag_default": 0.0,
+    "stationary_speed_threshold_mps": 0.01,
+    "odometer_rollover": 67108864.0,
+    "odometer_scale_to_km": 1.0,
+    "h5_stitch_max_gap_s": 5.0
+  },
+  "signal_notes": {
+    "acceleration": "Use CAN_PB 0x038 IIMULonAccPri as the final acceleration signal, with IIMULonAccPriV from the same frame as validity. ch3 is preferred; ch4/ch2/ch1 are fallback paths when the preferred channel is absent. IIMULonAccPriV == 0 means valid.",
+    "ego_speed": "Use CAN_PB 0x209 IVehSpdAvgDrvn_1 as the final ego speed signal, with IVehSpdAvgDrvnV_1 from the same frame as validity. ch3 is preferred; ch4/ch2/ch1 are fallback paths when the preferred channel is absent. IVehSpdAvgDrvnV_1 == 0 means valid.",
+    "stationary_state": "IVehMvngStat uses 0=moving and 1=stationary. stationary_flag is true when ego_speed_mps < 0.01 or IVehMvngStat == 1.0.",
+    "acc_active": "The framework reads acc_active from CAN_PB 0x376 IACCAct376 and derives acc_active_flag from it. ch3 is preferred; ch4/ch2 are fallback paths when the preferred channel is absent.",
+    "chassis_active": "ABS/TCS/VSE active states are read from CAN_PB 0x0AC primary signals and CAN_PB 0x0AE ICE2 signals. Preprocessing builds final abs_active/tcs_active/vse_active by using any valid active value from either source. ch3 is preferred for primary signals; ch4/ch2/ch1 are fallback paths.",
+    "slope_deg": "Debug_single_Reserved_51 is road slope in deg. slope_acc = 9.80665 * sin(slope_deg), only used by slope_no_frnt_* metrics.",
+    "front_target": "FLT1 is used for both follow and cut-in target. FLT1_CUTIN_Flag=0 means follow target, and FLT1_CUTIN_Flag=1 means cut-in target. Follow target validity also requires abs(FLT1_Lat_Range) <= 2m.",
+    "odometer": "Distance is calculated as last valid IVehOdo minus first valid IVehOdo per H5 file, corrected by odometer_rollover when needed."
+  }
+}

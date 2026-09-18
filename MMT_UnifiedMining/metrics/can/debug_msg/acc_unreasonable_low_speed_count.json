@@ -1,0 +1,17 @@
+{
+  "metric": "acc_unreasonable_low_speed_count",
+  "axes1": [
+    "PPEI_Vehicle_Speed_and_Distance_209_M1.IVehSpdAvgDrvn_1",
+    "Adaptive_Cruise_Disp_Stat.IACCDrvrSeltdSpd"
+  ],
+  "axes2": [
+    "Adaptive_Cruise_Disp_Stat.IACCAct376",
+    "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ],
+  "axes3": [
+    "TXT:_perception_fusion_object*.txt.has_front_target_ttc_lt_8s",
+    "TXT:_perception_fusion_object*.txt.close_front_target_x_lt_5m",
+    "TXT:_unp_planning_info.txt.traffic_light_decider_info",
+    "TXT:_unp_planning_info.txt.curvature_info"
+  ]
+}
