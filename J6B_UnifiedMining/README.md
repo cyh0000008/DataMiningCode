@@ -53,9 +53,9 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 ```
 
 - `input_path` 必须是文件夹路径。
-- 程序会扫描该文件夹下所有 `.h5` / `.hdf5` 文件。
-- `date` 格式固定为 `YYYYMMDD-YYYYMMDD`，按文件名中的日期做闭区间过滤。
-- 文件名日期支持 `YYYY-MM-DD` 或 `YYYYMMDD`，例如 `VC9_ver0520_2026-06-25_10_50_58_CAN_parsed.h5`。
+- 程序会递归扫描该文件夹及其子文件夹中的所有 `.h5` / `.hdf5` 文件，因此可以直接填写车型上层目录，例如 `F:\数据挖掘\DataMiningData\J6B\_Data\ES27PV011`。
+- `date` 格式固定为 `YYYYMMDD-YYYYMMDD`，按闭区间过滤。程序优先读取 H5 最近一级带日期的父文件夹；父目录均无日期时，再读取 H5 文件名中的日期。
+- 文件夹名和文件名中的日期均支持 `YYYY-MM-DD` 或 `YYYYMMDD`，例如文件夹 `20260827-E2LB-2-ES27PV011_parsed`，或文件 `VC9_ver0520_2026-06-25_10_50_58_CAN_parsed.h5`。
 - `filters` 目录固定为 `UnifiedMining/filters`；时间轴固定使用标准字段 `acceleration`。
 
 `config.json` 中每个 `signals` 值都必须是 H5 内的明确路径，例如：

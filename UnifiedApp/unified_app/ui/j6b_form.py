@@ -82,7 +82,7 @@ class J6BForm(QWidget):
         form.addRow("输入路径（可多个）：", self._wrap(input_col))
 
         self.date_range_edit = QLineEdit()
-        self.date_range_edit.setPlaceholderText("YYYYMMDD-YYYYMMDD，留空表示不过滤")
+        self.date_range_edit.setPlaceholderText("YYYYMMDD-YYYYMMDD，按日期子文件夹筛选，留空表示不过滤")
         form.addRow("日期范围：", self.date_range_edit)
 
         output_row = QHBoxLayout()

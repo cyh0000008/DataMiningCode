@@ -482,8 +482,8 @@ def collect_h5_files(input_path: Union[str, Path, Sequence[Union[str, Path]]]) -
         path = Path(item)
         if not path.is_dir():
             raise FileNotFoundError("input_path must be an existing folder: %s" % path)
-        files.extend(str(file_path.resolve()) for file_path in path.glob("*.h5"))
-        files.extend(str(file_path.resolve()) for file_path in path.glob("*.hdf5"))
+        files.extend(str(file_path.resolve()) for file_path in path.rglob("*.h5"))
+        files.extend(str(file_path.resolve()) for file_path in path.rglob("*.hdf5"))
     return sorted(set(files))
 
 

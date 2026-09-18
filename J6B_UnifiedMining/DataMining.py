@@ -215,7 +215,7 @@ def filter_files_by_date(h5_files: List[str], date_range: str) -> List[str]:
     start_date, end_date = parse_date_range(date_range)
     selected = []
     for file_path in h5_files:
-        file_date = extract_date_from_filename(Path(file_path).name)
+        file_date = extract_date_from_path(file_path)
         if file_date is None:
             continue
         if start_date <= file_date <= end_date:
@@ -230,6 +230,8 @@ def file_chronological_sort_key(file_path: str) -> Tuple[datetime, str]:
     if file_dt is not None:
         return (file_dt, file_path)
     file_date = extract_date_from_filename(file_name)
+    if file_date is None:
+        file_date = extract_date_from_path(file_path)
     if file_date is not None:
         return (datetime.combine(file_date, datetime.min.time()), file_path)
     return (datetime.min, file_path)
@@ -261,6 +263,16 @@ def extract_date_from_filename(file_name: str) -> Optional[date]:
         except ValueError:
             return None
     return None
+
+
+def extract_date_from_path(file_path: str | Path) -> Optional[date]:
+    """Return the nearest dated parent folder, falling back to the H5 name."""
+    path = Path(file_path)
+    for parent in path.parents:
+        parent_date = extract_date_from_filename(parent.name)
+        if parent_date is not None:
+            return parent_date
+    return extract_date_from_filename(path.name)
 
 
 def extract_datetime_from_filename(file_name: str) -> Optional[datetime]:
