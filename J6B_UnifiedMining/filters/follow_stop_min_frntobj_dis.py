@@ -11,8 +11,8 @@ class FollowStopMinFrntobjDisMetric(BaseMetric):
     category = "CPI"
     required_fields = ("time_s", "acceleration_total")
     scene = "follow_stop"
-    measure = "min_front_distance"
-    lower = 2.0
+    measure = "stop_front_distance"
+    lower = 3.5
     upper = 5.0
     severity_base = 2.0
     bad_when_missing = False

@@ -70,8 +70,8 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
 
-    # 4. 统计每个风险段落的前车距离最小值
-    min_frntobj_dis_values: List[str] = []
+    # 4. 统计每个风险段落完成刹停时的前车距离
+    stop_frntobj_dis_values: List[str] = []
     case_statistics: Dict = {}
 
     case_statistics = {
@@ -81,23 +81,23 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     }
     for i,segment in enumerate(risk_segments):
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
-        (min_lon_dis, curr_lat_dis, curr_vel, min_dis_time) = _calc_segment_min_frntdis(segment)
-        if min_lon_dis is not None:
-            if _check_min_frntobj_dis_valid(min_lon_dis) is not True:
+        (stop_lon_dis, curr_lat_dis, curr_vel, stop_dis_time) = _calc_segment_stop_frntdis(segment)
+        if stop_lon_dis is not None:
+            if _check_stop_frntobj_dis_valid(stop_lon_dis) is not True:
                 case_statistics["Bad Case"] += 1
-                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(min_lon_dis))
+                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop_lon_dis))
                 check_result = True
-                min_frntobj_dis_values.append(f"[FrntObjDis Dangerous! time:{min_dis_time} , min_obj_pos:(lon_dis:{min_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
+                stop_frntobj_dis_values.append(f"[StopFrntObjDis Dangerous! time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
             else:
-                min_frntobj_dis_values.append(f"[time:{min_dis_time} , min_obj_pos:(lon_dis:{min_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
+                stop_frntobj_dis_values.append(f"[time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
 
-    return (check_result, min_frntobj_dis_values, case_statistics)
+    return (check_result, stop_frntobj_dis_values, case_statistics)
 
-def _check_min_frntobj_dis_valid(min_frntobj_dis: Optional[float]) -> bool:
+def _check_stop_frntobj_dis_valid(stop_frntobj_dis: Optional[float]) -> bool:
     C_dis_upper_bound = 5
-    C_dis_lower_bound = 2
+    C_dis_lower_bound = 3.5
 
-    ref_frntobj_dis = min_frntobj_dis
+    ref_frntobj_dis = stop_frntobj_dis
 
     if ref_frntobj_dis >= C_dis_lower_bound and ref_frntobj_dis <= C_dis_upper_bound:
         return True
@@ -106,7 +106,7 @@ def _check_min_frntobj_dis_valid(min_frntobj_dis: Optional[float]) -> bool:
     
 def _cal_severity_score(min_frntobj_dis: Optional[float]) -> float:
     C_dis_upper_bound = 5
-    C_dis_lower_bound = 2
+    C_dis_lower_bound = 3.5
 
     ref_frntobj_dis = min_frntobj_dis
 
@@ -184,6 +184,8 @@ def _find_risk_segments(
         else:
             if current_segment:
                 if len(current_segment) > C_min_risk_segment_length and f_stationary == True:
+                    # 把首次 stationary 帧纳入场景，用于读取完成刹停后的前车距离。
+                    current_segment.append(unp_para)
                     risk_segments.append(current_segment)
                 current_segment = []
 
@@ -192,41 +194,32 @@ def _find_risk_segments(
     print(f"————————————找到 {len(risk_segments)} 个跟停连续风险段落————————————————")
     return risk_segments
 
-def _calc_segment_min_frntdis(
+def _calc_segment_stop_frntdis(
     segment: List[Dict]
 ) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """计算风险段落中accleration_on_wheel的最小值：匹配unp的chassis基准时刻（适配字典格式）"""
-    frntobj_dis_with_time = []
-    min_dis_vel = 40
-    for i, unp_para in enumerate(segment):
+    """读取跟停场景首次 stationary 帧上的前车距离。"""
+    for unp_para in reversed(segment):
         unp_frame_data = unp_para.get("unp_frame_data", {})
         base_time_ms = lonprepro._get_unp_fusion_meta_time(unp_frame_data)
         if base_time_ms is None:
-            print("当前unp段落无fusion基准时刻，跳过")
             continue
         chassis_base_time_ms = lonprepro._get_unp_chassis_meta_time(unp_frame_data)
         if chassis_base_time_ms is None:
-            print("当前unp段落无chassis基准时刻，跳过")
             continue
 
+        matched_chassis = unp_para.get("matched_chassis", {})
+        if not matched_chassis or not matched_chassis.get("stationary", False):
+            continue
         matched_fusion = unp_para.get("matched_fusion", {})
         if matched_fusion:
             curr_min_lon_dis = matched_fusion.get("closest_obj_x")
             curr_min_lat_dis = matched_fusion.get("closest_obj_y")
             curr_min_len = matched_fusion.get("closest_obj_len")
-            if curr_min_lon_dis is not None and curr_min_lat_dis is not None:
-                matched_chassis = unp_para.get("matched_chassis", {})
-                if matched_chassis:
-                    vel = matched_chassis.get("vehicle_speed_average")
-                    if vel is not None:
-                        frntobj_dis_with_time.append((curr_min_lon_dis,curr_min_lat_dis,vel,base_time_ms,curr_min_len))
+            vel = matched_chassis.get("vehicle_speed_average")
+            if all(value is not None for value in (curr_min_lon_dis, curr_min_lat_dis, curr_min_len, vel)):
+                C_EgoRearWhell2Frnt_dis = 3.8
+                stop_distance = float(curr_min_lon_dis) - 0.5 * float(curr_min_len) - C_EgoRearWhell2Frnt_dis
+                return (stop_distance, float(curr_min_lat_dis), float(vel), float(base_time_ms))
 
-    if not frntobj_dis_with_time:
-        print("警告：当前风险段落无有效最近跟车距离数据")
-        return (None, None, None, None)
-
-    min_frntobj_dis_item = min(frntobj_dis_with_time, key=lambda x: x[0])
-
-    C_EgoRearWhell2Frnt_dis = 3.8
-
-    return (min_frntobj_dis_item[0] - 0.5*min_frntobj_dis_item[4] - C_EgoRearWhell2Frnt_dis, min_frntobj_dis_item[1], min_frntobj_dis_item[2],min_frntobj_dis_item[3])
+    print("警告：当前风险段落的刹停帧无有效前车距离数据")
+    return (None, None, None, None)

@@ -163,6 +163,7 @@ MEASURE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "min_ttc": ("time_s", "front_ttc"),
     "min_ttc_front_decel": ("time_s", "front_ttc", "front_accel"),
     "min_front_distance": ("time_s", "front_range"),
+    "stop_front_distance": ("time_s", "front_range", "stationary_flag"),
     "speed_inflections": ("time_s", "ego_speed_mps"),
     "velocity_fluct": ("time_s", "ego_speed_mps"),
     "start_latency": ("time_s", "ego_speed_mps"),
@@ -735,6 +736,14 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
     if measure == "min_front_distance":
         distance = frame.col("front_range", np.inf).astype(float)[seg.start : seg.end + 1]
         return min_with_time(t, distance, extra)
+    if measure == "stop_front_distance":
+        distance = float(frame.col("front_range", np.nan).astype(float)[seg.end])
+        stationary = bool(frame.col("stationary_flag", 0).astype(bool)[seg.end])
+        if not stationary or not np.isfinite(distance):
+            return None, None, extra
+        extra["stop_index"] = int(seg.end)
+        extra["distance_sample"] = "first_stationary_frame"
+        return distance, float(frame.time_s[seg.end]), extra
     if measure == "speed_inflections":
         return float(count_speed_inflections(t, speed_window())), None, extra
     if measure == "velocity_fluct":

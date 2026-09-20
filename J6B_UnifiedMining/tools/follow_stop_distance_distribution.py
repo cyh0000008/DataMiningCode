@@ -68,8 +68,8 @@ class VehicleSummary:
     distance_mean_m: Optional[float]
     distance_p90_m: Optional[float]
     distance_max_m: Optional[float]
-    in_2_to_5m_count: int
-    in_2_to_5m_ratio: Optional[float]
+    in_3p5_to_5m_count: int
+    in_3p5_to_5m_ratio: Optional[float]
     skipped_file_count: int
 
 
@@ -386,12 +386,12 @@ def summarize_vehicle(
             distance_mean_m=None,
             distance_p90_m=None,
             distance_max_m=None,
-            in_2_to_5m_count=0,
-            in_2_to_5m_ratio=None,
+            in_3p5_to_5m_count=0,
+            in_3p5_to_5m_ratio=None,
             skipped_file_count=skipped_file_count,
         )
 
-    in_band = np.logical_and(distances >= 2.0, distances <= 5.0)
+    in_band = np.logical_and(distances >= 3.5, distances <= 5.0)
     return VehicleSummary(
         vehicle_id=vehicle_id,
         model=model,
@@ -404,8 +404,8 @@ def summarize_vehicle(
         distance_mean_m=round(float(np.nanmean(distances)), 3),
         distance_p90_m=round(float(np.nanpercentile(distances, 90)), 3),
         distance_max_m=round(float(np.nanmax(distances)), 3),
-        in_2_to_5m_count=int(np.count_nonzero(in_band)),
-        in_2_to_5m_ratio=round(float(np.count_nonzero(in_band) / distances.size), 6),
+        in_3p5_to_5m_count=int(np.count_nonzero(in_band)),
+        in_3p5_to_5m_ratio=round(float(np.count_nonzero(in_band) / distances.size), 6),
         skipped_file_count=skipped_file_count,
     )
 
@@ -428,7 +428,7 @@ def write_summary_json(
     payload = {
         "distance_definition": "front_range at the first sample where ego is stationary and front vehicle speed <= 0.2 m/s within the current follow_stop scene",
         "scene_definition": "metric_utils.follow_stop_segments from current code; follow_mask=ACC active + front_valid + target_present, own vehicle moves then stops, front vehicle also stopped",
-        "standard_band_m": [2.0, 5.0],
+        "standard_band_m": [3.5, 5.0],
         "summaries": [asdict(summary) for summary in summaries],
         "errors": errors,
     }
@@ -454,7 +454,7 @@ def draw_distribution_plot(
     font_small = load_font(13)
 
     draw.text((48, 32), "%s %s 跟车刹停后距离分布" % (model, vehicle_id), fill="#1f2937", font=font_title)
-    subtitle = "距离定义：刹停结束点 front_range；参考带：2.0-5.0 m；数据目录 %d 个，H5 %d 个" % (
+    subtitle = "距离定义：刹停结束点 front_range；参考带：3.5-5.0 m；数据目录 %d 个，H5 %d 个" % (
         folder_count,
         h5_count,
     )
@@ -495,11 +495,11 @@ def draw_distribution_plot(
         return chart_left + chart_width * (value / upper)
 
     # Draw acceptable-distance band before bars so the bars stay readable.
-    band_left = max(chart_left, x_for(2.0))
+    band_left = max(chart_left, x_for(3.5))
     band_right = min(chart_right, x_for(5.0))
     if band_right > band_left:
         draw.rectangle((band_left, chart_top, band_right, chart_bottom), fill="#dcfce7")
-        draw.text((band_left + 6, chart_top + 7), "2-5 m", fill="#166534", font=font_small)
+        draw.text((band_left + 6, chart_top + 7), "3.5-5 m", fill="#166534", font=font_small)
 
     max_count = max(int(np.max(counts)), 1)
     y_tick_count = min(max_count, 5)
@@ -524,11 +524,11 @@ def draw_distribution_plot(
 
     draw.line((chart_left, chart_bottom, chart_right, chart_bottom), fill="#374151", width=2)
     draw.line((chart_left, chart_top, chart_left, chart_bottom), fill="#374151", width=2)
-    for mark in (2.0, 5.0):
+    for mark in (3.5, 5.0):
         if mark <= upper:
             x = x_for(mark)
             draw.line((x, chart_top, x, chart_bottom), fill="#16a34a", width=2)
-            draw.text((x + 4, chart_bottom + 8), "%.0fm" % mark, fill="#166534", font=font_small)
+            draw.text((x + 4, chart_bottom + 8), "%gm" % mark, fill="#166534", font=font_small)
 
     tick_step = choose_tick_step(upper)
     tick = 0.0
@@ -544,7 +544,7 @@ def draw_distribution_plot(
     draw.text((x0 + 18, chart_top - 26), "case 数", fill="#374151", font=font_axis)
     draw_stats(draw, stats_box, summary, font_subtitle, font_axis, font_small)
 
-    note = "说明：当前图主统计 end_distance_m；CSV 中同时保留 min_distance_m，可与 follow_stop_min_frntobj_dis 口径对齐查看。"
+    note = "说明：指标使用 end_distance_m（首次 stationary 帧）；CSV 中的 min_distance_m 仅用于观察刹停过程。"
     draw.text((74, 650), note, fill="#4b5563", font=font_axis)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path)
@@ -562,9 +562,9 @@ def draw_stats(
     draw.text((x0 + 20, y0 + 22), "统计摘要", fill="#111827", font=font_title)
     rows = [
         ("跟车刹停数", str(summary.follow_stop_count)),
-        ("有效带内(2-5m)", "%d%s" % (
-            summary.in_2_to_5m_count,
-            "" if summary.in_2_to_5m_ratio is None else " / %.1f%%" % (summary.in_2_to_5m_ratio * 100.0),
+        ("有效带内(3.5-5m)", "%d%s" % (
+            summary.in_3p5_to_5m_count,
+            "" if summary.in_3p5_to_5m_ratio is None else " / %.1f%%" % (summary.in_3p5_to_5m_ratio * 100.0),
         )),
         ("最小值", format_optional(summary.distance_min_m)),
         ("P10", format_optional(summary.distance_p10_m)),
