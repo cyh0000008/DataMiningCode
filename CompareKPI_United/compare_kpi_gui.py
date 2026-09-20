@@ -92,12 +92,6 @@ class CompareKpiApp:
         self.output_name = StringVar(value="")
         self.include_details = BooleanVar(value=False)
 
-        self.base_vehicle = StringVar(value="")
-        self.base_date = StringVar(value="")
-        self.base_version = StringVar(value="")
-        self.target_vehicle = StringVar(value="")
-        self.target_date = StringVar(value="")
-        self.target_version = StringVar(value="")
 
         self.status = StringVar(value="准备就绪")
         self.log_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
@@ -152,22 +146,7 @@ class CompareKpiApp:
         self._path_row(paths, 0, "base", self.base_path, optional=True)
         self._path_row(paths, 1, "target", self.target_path, optional=False)
 
-        overrides = ttk.LabelFrame(outer, text="表头覆盖（留空则按报告默认信息）", padding=12)
-        overrides.grid(row=3, column=0, sticky="ew", pady=8)
-        for col in range(1, 7, 2):
-            overrides.columnconfigure(col, weight=1)
-
-        self._override_row(overrides, 0, "base车型", self.base_vehicle, "base日期", self.base_date, "base版本", self.base_version)
-        self._override_row(
-            overrides,
-            1,
-            "target车型",
-            self.target_vehicle,
-            "target日期",
-            self.target_date,
-            "target版本",
-            self.target_version,
-        )
+        ttk.Label(outer, text="表头车型、日期和软件版本自动读取报告文件名。").grid(row=3, column=0, sticky="w")
 
         actions = ttk.Frame(outer)
         actions.grid(row=4, column=0, sticky="ew", pady=(8, 10))
@@ -196,23 +175,6 @@ class CompareKpiApp:
         if optional:
             ttk.Button(parent, text="清空", command=lambda: variable.set("")).grid(row=row, column=4, padx=(6, 0), pady=4)
 
-    def _override_row(
-        self,
-        parent: ttk.Frame,
-        row: int,
-        label_a: str,
-        var_a: StringVar,
-        label_b: str,
-        var_b: StringVar,
-        label_c: str,
-        var_c: StringVar,
-    ) -> None:
-        ttk.Label(parent, text=label_a).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=var_a).grid(row=row, column=1, sticky="ew", padx=(8, 18), pady=4)
-        ttk.Label(parent, text=label_b).grid(row=row, column=2, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=var_b).grid(row=row, column=3, sticky="ew", padx=(8, 18), pady=4)
-        ttk.Label(parent, text=label_c).grid(row=row, column=4, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=var_c).grid(row=row, column=5, sticky="ew", padx=(8, 0), pady=4)
 
     def _make_log_widget(self, parent: ttk.Frame):
         import tkinter as tk
@@ -289,12 +251,6 @@ class CompareKpiApp:
             "target_path": target,
             "include_details": bool(self.include_details.get()),
             "report_profile": profile,
-            "base_vehicle": blank_to_none(self.base_vehicle.get()),
-            "target_vehicle": blank_to_none(self.target_vehicle.get()),
-            "base_date": blank_to_none(self.base_date.get()),
-            "target_date": blank_to_none(self.target_date.get()),
-            "base_version": blank_to_none(self.base_version.get()),
-            "target_version": blank_to_none(self.target_version.get()),
         }
 
     def _run_generate(self, options: dict[str, object]) -> None:

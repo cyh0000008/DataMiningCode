@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 
@@ -11,9 +12,19 @@ _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def build_archive_stem(vehicle: str, date_text: str, version: str) -> str:
+    date_text = date_text.strip()
+    match = re.fullmatch(r"(20\d{6})(?:[-~](20\d{6}))?", date_text)
+    if not match:
+        raise ValueError("日期范围请使用 YYYYMMDD-YYYYMMDD，单日可填写 YYYYMMDD")
+    start, end = match[1], match[2] or match[1]
+    datetime.strptime(start, "%Y%m%d")
+    datetime.strptime(end, "%Y%m%d")
+    if start > end:
+        raise ValueError("日期范围的开始日期不能晚于结束日期")
+    date_text = f"{start}-{end}"
     parts = [_sanitize_filename_part(value) for value in (vehicle, date_text, version)]
     if any(not part for part in parts):
-        raise ValueError("归档报告需要填写 Target 车型、日期和软件版本")
+        raise ValueError("报告命名需要填写当前报告车型、日期范围和软件版本")
     return "-".join(parts)
 
 

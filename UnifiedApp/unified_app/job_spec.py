@@ -18,6 +18,10 @@ JOB_KIND_LABELS = {
 
 
 def _from_dict(cls, data: Dict[str, Any]):
+    data = dict(data)
+    if cls.__name__ in {"J6BJobSpec", "MMTJobSpec"}:
+        data.setdefault("vehicle", data.get("compare_target_vehicle", ""))
+        data.setdefault("software_version", data.get("compare_target_version", ""))
     defaults = cls()
     known = {f: data.get(f, getattr(defaults, f)) for f in cls.__dataclass_fields__}
     return cls(**known)
@@ -25,6 +29,8 @@ def _from_dict(cls, data: Dict[str, Any]):
 
 @dataclass
 class J6BJobSpec:
+    vehicle: str = ""
+    software_version: str = ""
     task_name: str = ""
     template_config_path: str = ""
     input_paths: List[str] = field(default_factory=list)
@@ -54,6 +60,8 @@ class J6BJobSpec:
 
 @dataclass
 class MMTJobSpec:
+    vehicle: str = ""
+    software_version: str = ""
     task_name: str = ""
     template_config_path: str = ""
     source_path: str = ""

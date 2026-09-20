@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QGroupBox,
-    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -59,6 +58,12 @@ class J6BForm(QWidget):
         self.task_name_edit = QLineEdit()
         form.addRow("任务名称：", self.task_name_edit)
 
+        self.vehicle_edit = QLineEdit()
+        self.vehicle_edit.setPlaceholderText("例如 E2LB-2-ES27PV011 或 C1UL-2-TU27PV007")
+        form.addRow("当前报告车型：", self.vehicle_edit)
+        self.software_version_edit = QLineEdit()
+        form.addRow("当前报告软件版本：", self.software_version_edit)
+
         template_row = QHBoxLayout()
         self.template_edit = QLineEdit(str(self._default_template_path()))
         template_row.addWidget(self.template_edit)
@@ -82,7 +87,7 @@ class J6BForm(QWidget):
         form.addRow("输入路径（可多个）：", self._wrap(input_col))
 
         self.date_range_edit = QLineEdit()
-        self.date_range_edit.setPlaceholderText("YYYYMMDD-YYYYMMDD，按日期子文件夹筛选，留空表示不过滤")
+        self.date_range_edit.setPlaceholderText("YYYYMMDD-YYYYMMDD，用于数据筛选、报告命名和表头")
         form.addRow("日期范围：", self.date_range_edit)
 
         output_row = QHBoxLayout()
@@ -125,31 +130,10 @@ class J6BForm(QWidget):
         self.compare_details_check = QCheckBox("生成对比报告时附带明细 Sheet")
         compare_form.addRow(self.compare_details_check)
 
-        header_group = QGroupBox("对比报告表头覆盖（可选，留空则自动识别）")
-        header_grid = QGridLayout(header_group)
-        header_grid.addWidget(QLabel(""), 0, 0)
-        header_grid.addWidget(QLabel("Base"), 0, 1)
-        header_grid.addWidget(QLabel("Target"), 0, 2)
-        self.compare_base_vehicle_edit = QLineEdit()
-        self.compare_target_vehicle_edit = QLineEdit()
-        self.compare_base_date_edit = QLineEdit()
-        self.compare_target_date_edit = QLineEdit()
-        self.compare_base_version_edit = QLineEdit()
-        self.compare_target_version_edit = QLineEdit()
-        header_grid.addWidget(QLabel("车型："), 1, 0)
-        header_grid.addWidget(self.compare_base_vehicle_edit, 1, 1)
-        header_grid.addWidget(self.compare_target_vehicle_edit, 1, 2)
-        header_grid.addWidget(QLabel("日期："), 2, 0)
-        header_grid.addWidget(self.compare_base_date_edit, 2, 1)
-        header_grid.addWidget(self.compare_target_date_edit, 2, 2)
-        header_grid.addWidget(QLabel("软件版本："), 3, 0)
-        header_grid.addWidget(self.compare_base_version_edit, 3, 1)
-        header_grid.addWidget(self.compare_target_version_edit, 3, 2)
-        compare_form.addRow(header_group)
 
         archive_row = QHBoxLayout()
         self.raw_report_archive_dir_edit = QLineEdit()
-        self.raw_report_archive_dir_edit.setPlaceholderText("可选；按 Target 的车型-日期-版本.xlsx 另存原始报告")
+        self.raw_report_archive_dir_edit.setPlaceholderText("按车型-日期范围-软件版本.xlsx 另存；留空则保存在原始报告旁")
         archive_row.addWidget(self.raw_report_archive_dir_edit)
         archive_btn = QPushButton("浏览…")
         archive_btn.clicked.connect(self._browse_raw_report_archive_dir)
@@ -223,12 +207,8 @@ class J6BForm(QWidget):
             auto_compare=self.auto_compare_check.isChecked(),
             compare_base_path=self.compare_base_edit.text().strip(),
             compare_details_sheet=self.compare_details_check.isChecked(),
-            compare_base_vehicle=self.compare_base_vehicle_edit.text().strip(),
-            compare_target_vehicle=self.compare_target_vehicle_edit.text().strip(),
-            compare_base_date=self.compare_base_date_edit.text().strip(),
-            compare_target_date=self.compare_target_date_edit.text().strip(),
-            compare_base_version=self.compare_base_version_edit.text().strip(),
-            compare_target_version=self.compare_target_version_edit.text().strip(),
+            vehicle=self.vehicle_edit.text().strip(),
+            software_version=self.software_version_edit.text().strip(),
             raw_report_archive_dir=self.raw_report_archive_dir_edit.text().strip(),
         )
 
@@ -249,12 +229,8 @@ class J6BForm(QWidget):
         self.auto_compare_check.setChecked(spec.auto_compare)
         self.compare_base_edit.setText(spec.compare_base_path)
         self.compare_details_check.setChecked(spec.compare_details_sheet)
-        self.compare_base_vehicle_edit.setText(spec.compare_base_vehicle)
-        self.compare_target_vehicle_edit.setText(spec.compare_target_vehicle)
-        self.compare_base_date_edit.setText(spec.compare_base_date)
-        self.compare_target_date_edit.setText(spec.compare_target_date)
-        self.compare_base_version_edit.setText(spec.compare_base_version)
-        self.compare_target_version_edit.setText(spec.compare_target_version)
+        self.vehicle_edit.setText(spec.vehicle)
+        self.software_version_edit.setText(spec.software_version)
         self.raw_report_archive_dir_edit.setText(spec.raw_report_archive_dir)
 
     def _refresh_presets(self) -> None:
@@ -300,13 +276,11 @@ class J6BForm(QWidget):
         if not spec.input_paths:
             QMessageBox.warning(self, "参数不完整", "请至少添加一个输入路径。")
             return
-        if spec.raw_report_archive_dir and not all(
-            (spec.compare_target_vehicle, spec.compare_target_date, spec.compare_target_version)
-        ):
+        if not all((spec.vehicle, spec.date_range, spec.software_version)):
             QMessageBox.warning(
                 self,
                 "参数不完整",
-                "启用原始报告额外保存时，请填写 Target 的车型、日期和软件版本。",
+                "请填写当前报告车型、日期范围和软件版本，用于报告命名及对比表头。",
             )
             return
         template_path = Path(spec.template_config_path or str(self._default_template_path()))

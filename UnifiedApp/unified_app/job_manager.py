@@ -117,18 +117,12 @@ class JobManager(QObject):
         pending_compare = self._build_pending_compare(
             JOB_KIND_J6B, title, spec.auto_compare, spec.compare_base_path,
             spec.compare_details_sheet, compare_python, compare_dir,
-            base_vehicle=spec.compare_base_vehicle,
-            target_vehicle=spec.compare_target_vehicle,
-            base_date=spec.compare_base_date,
-            target_date=spec.compare_target_date,
-            base_version=spec.compare_base_version,
-            target_version=spec.compare_target_version,
         )
         report_archive = self._build_report_archive(
             spec.raw_report_archive_dir,
-            spec.compare_target_vehicle,
-            spec.compare_target_date,
-            spec.compare_target_version,
+            spec.vehicle,
+            spec.date_range,
+            spec.software_version,
         )
         return self._submit(
             JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare, report_archive
@@ -160,18 +154,12 @@ class JobManager(QObject):
         pending_compare = self._build_pending_compare(
             JOB_KIND_MMT, title, auto_compare, spec.compare_base_path,
             spec.compare_details_sheet, compare_python, compare_dir,
-            base_vehicle=spec.compare_base_vehicle,
-            target_vehicle=spec.compare_target_vehicle,
-            base_date=spec.compare_base_date,
-            target_date=spec.compare_target_date,
-            base_version=spec.compare_base_version,
-            target_version=spec.compare_target_version,
         )
-        report_archive = self._build_report_archive(
+        report_archive = None if spec.dry_run else self._build_report_archive(
             spec.raw_report_archive_dir,
-            spec.compare_target_vehicle,
-            spec.compare_target_date,
-            spec.compare_target_version,
+            spec.vehicle,
+            spec.query_date,
+            spec.software_version,
         )
         return self._submit(
             JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare, report_archive
@@ -192,12 +180,6 @@ class JobManager(QObject):
             "--target": spec.target_path,
             "--template": spec.template_path,
             "--output": spec.output_path,
-            "--base-vehicle": spec.base_vehicle,
-            "--target-vehicle": spec.target_vehicle,
-            "--base-date": spec.base_date,
-            "--target-date": spec.target_date,
-            "--base-version": spec.base_version,
-            "--target-version": spec.target_version,
             "--base-source-date": spec.base_source_date,
             "--target-source-date": spec.target_source_date,
         }
@@ -268,10 +250,8 @@ class JobManager(QObject):
         target_date: str,
         target_version: str,
     ) -> Optional[Dict[str, str]]:
-        if not archive_dir.strip():
-            return None
-        if not all((target_vehicle.strip(), target_date.strip(), target_version.strip())):
-            raise ValueError("启用原始报告额外保存时，请填写 Target 的车型、日期和软件版本")
+        from .report_archive import build_archive_stem
+        build_archive_stem(target_vehicle, target_date, target_version)
         return {
             "archive_dir": archive_dir.strip(),
             "vehicle": target_vehicle.strip(),
@@ -407,7 +387,7 @@ class JobManager(QObject):
         try:
             archived_path = archive_report(
                 job.report_path,
-                options["archive_dir"],
+                options["archive_dir"] or job.report_path.parent,
                 options["vehicle"],
                 options["date"],
                 options["version"],
@@ -426,18 +406,18 @@ class JobManager(QObject):
         pending = job.pending_compare
         if pending is None:
             return
-        if job.report_path is None:
+        if job.archived_report_path is None:
             message = (
-                "[自动对比] 未能从输出中捕获生成的报告路径，跳过自动生成对比报告，"
-                "请在“对比报告”页签手动指定 target 路径。"
+                "[自动对比] 未生成包含车型、日期和软件版本的报告副本，跳过自动对比。"
+                "请检查原始报告归档日志。"
             )
             job.log_lines.append(message)
             self.job_log.emit(job.id, message)
             self.job_updated.emit(job.id)
             return
         spec: CompareJobSpec = pending["spec"]
-        spec.target_path = str(job.report_path)
-        message = f"[自动对比] 挖掘任务已完成，检测到报告：{job.report_path}，正在自动提交对比报告任务…"
+        spec.target_path = str(job.archived_report_path)
+        message = f"[自动对比] 挖掘任务已完成，使用报告：{job.archived_report_path}，正在自动提交对比报告任务…"
         job.log_lines.append(message)
         self.job_log.emit(job.id, message)
         self.job_updated.emit(job.id)

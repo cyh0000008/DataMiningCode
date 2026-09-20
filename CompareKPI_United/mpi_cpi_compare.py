@@ -328,6 +328,19 @@ def parse_legacy_filename(path: Path, side: str) -> ResultFile | None:
 
 
 def parse_named_report_filename(path: Path, side: str) -> ResultFile | None:
+    # Anchor the date boundary: vehicle and software version may both contain hyphens.
+    stem = re.sub(r" \(\d+\)$", "", path.stem)
+    match = re.fullmatch(
+        r"(?P<vehicle>.+?)-(?P<start>20\d{6})(?:[-~](?P<end>20\d{6}))?-(?P<version>.+)",
+        stem,
+    )
+    if match:
+        vehicle = re.sub(r"^(.+-\d+)-([A-Za-z0-9]+)$", r"\1 \2", match["vehicle"])
+        return ResultFile(
+            side=side, kind="unified", vehicle=vehicle,
+            start_date=match["start"], end_date=match["end"] or match["start"],
+            version=match["version"], path=path,
+        )
     parts = [part for part in path.stem.split("_") if part]
     if len(parts) < 4 or parts[0].lower() in {"topic", "can"}:
         return None
@@ -1437,16 +1450,22 @@ def build_report(
     target_input_path = target_path or default_side_input_path(root, "target", report_profile)
     base_reports = find_side_reports(root, "base", base_input_path, required=False)
     target_reports = find_side_reports(root, "target", target_input_path, required=True)
+    # Keep filename metadata even if a historical comparison workbook is converted.
+    base_filename_info = (
+        parse_named_report_filename(choose_header_info(base_reports).path, "base")
+        if base_reports else None
+    )
+    target_filename_info = parse_named_report_filename(choose_header_info(target_reports).path, "target")
     base_reports = prepare_latest_reports(root, report_profile, "base", base_reports, base_source_date)
     target_reports = prepare_latest_reports(root, report_profile, "target", target_reports, target_source_date)
     base_available = bool(base_reports)
-    base_info = apply_header_overrides(
+    base_info = base_filename_info or apply_header_overrides(
         choose_header_info(base_reports) if base_available else blank_header_info("base"),
         base_vehicle,
         base_date,
         base_version,
     )
-    target_info = apply_header_overrides(
+    target_info = target_filename_info or apply_header_overrides(
         choose_header_info(target_reports), target_vehicle, target_date, target_version
     )
     if output is None:

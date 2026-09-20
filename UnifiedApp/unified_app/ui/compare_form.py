@@ -66,7 +66,7 @@ class CompareForm(QWidget):
         self.base_path_edit.setPlaceholderText("留空则只展示 target 结果")
         base_row.addWidget(self.base_path_edit)
         base_btn = QPushButton("浏览…")
-        base_btn.clicked.connect(lambda: self._browse_path(self.base_path_edit))
+        base_btn.clicked.connect(lambda: self._browse_path(self.base_path_edit, is_dir=False))
         base_row.addWidget(base_btn)
         form.addRow("Base 报告：", self._wrap(base_row))
 
@@ -74,7 +74,7 @@ class CompareForm(QWidget):
         self.target_path_edit = QLineEdit()
         target_row.addWidget(self.target_path_edit)
         target_btn = QPushButton("浏览…")
-        target_btn.clicked.connect(lambda: self._browse_path(self.target_path_edit))
+        target_btn.clicked.connect(lambda: self._browse_path(self.target_path_edit, is_dir=False))
         target_row.addWidget(target_btn)
         form.addRow("Target 报告：", self._wrap(target_row))
 
@@ -101,27 +101,7 @@ class CompareForm(QWidget):
 
         layout.addWidget(form_group)
 
-        self.advanced_group = QGroupBox("高级：表头覆盖（可选）")
-        self.advanced_group.setCheckable(True)
-        self.advanced_group.setChecked(False)
-        advanced_form = QFormLayout(self.advanced_group)
-        self.base_vehicle_edit = QLineEdit()
-        self.target_vehicle_edit = QLineEdit()
-        self.base_date_edit = QLineEdit()
-        self.target_date_edit = QLineEdit()
-        self.base_version_edit = QLineEdit()
-        self.target_version_edit = QLineEdit()
-        self.base_source_date_edit = QLineEdit()
-        self.target_source_date_edit = QLineEdit()
-        advanced_form.addRow("Base 车型：", self.base_vehicle_edit)
-        advanced_form.addRow("Target 车型：", self.target_vehicle_edit)
-        advanced_form.addRow("Base 日期：", self.base_date_edit)
-        advanced_form.addRow("Target 日期：", self.target_date_edit)
-        advanced_form.addRow("Base 软件版本：", self.base_version_edit)
-        advanced_form.addRow("Target 软件版本：", self.target_version_edit)
-        advanced_form.addRow("Base 来源日期组：", self.base_source_date_edit)
-        advanced_form.addRow("Target 来源日期组：", self.target_source_date_edit)
-        layout.addWidget(self.advanced_group)
+        layout.addWidget(QLabel("表头车型、日期和软件版本自动读取报告文件名。"))
 
         run_row = QHBoxLayout()
         run_row.addStretch(1)
@@ -169,14 +149,6 @@ class CompareForm(QWidget):
             template_path=self.template_path_edit.text().strip(),
             output_path=self.output_path_edit.text().strip(),
             details_sheet=self.details_checkbox.isChecked(),
-            base_vehicle=self.base_vehicle_edit.text().strip(),
-            target_vehicle=self.target_vehicle_edit.text().strip(),
-            base_date=self.base_date_edit.text().strip(),
-            target_date=self.target_date_edit.text().strip(),
-            base_version=self.base_version_edit.text().strip(),
-            target_version=self.target_version_edit.text().strip(),
-            base_source_date=self.base_source_date_edit.text().strip(),
-            target_source_date=self.target_source_date_edit.text().strip(),
         )
 
     def _apply_spec(self, spec: CompareJobSpec) -> None:
@@ -189,14 +161,6 @@ class CompareForm(QWidget):
         self.template_path_edit.setText(spec.template_path)
         self.output_path_edit.setText(spec.output_path)
         self.details_checkbox.setChecked(spec.details_sheet)
-        self.base_vehicle_edit.setText(spec.base_vehicle)
-        self.target_vehicle_edit.setText(spec.target_vehicle)
-        self.base_date_edit.setText(spec.base_date)
-        self.target_date_edit.setText(spec.target_date)
-        self.base_version_edit.setText(spec.base_version)
-        self.target_version_edit.setText(spec.target_version)
-        self.base_source_date_edit.setText(spec.base_source_date)
-        self.target_source_date_edit.setText(spec.target_source_date)
 
     def _refresh_presets(self) -> None:
         current = self.preset_combo.currentText()
