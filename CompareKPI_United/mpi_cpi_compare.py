@@ -1393,11 +1393,32 @@ def safe_filename_token(value: str) -> str:
     return token.strip("._ ") or "NA"
 
 
-def make_default_output_path(root: Path, report_profile: str, target_info: ResultFile) -> Path:
-    parts = ["MPI_CPI_汇总对比", safe_filename_token(report_profile)]
-    if target_info.date_range:
-        parts.append(safe_filename_token(target_info.date_range))
-    return root / DEFAULT_REPORT_DIR / f"{'_'.join(parts)}.xlsx"
+def make_default_output_path(
+    root: Path,
+    base_info: ResultFile,
+    target_info: ResultFile,
+    mining_report_time: datetime,
+) -> Path:
+    # Comparison filenames contain the model only; headers retain the vehicle ID.
+    vehicle = target_info.vehicle.strip()
+    model_match = re.fullmatch(r"([A-Za-z0-9]+-\d+)(?:[\s-]+[A-Za-z0-9]+)?", vehicle)
+    if model_match:
+        vehicle = model_match.group(1)
+    vehicle = re.sub(r"\s+", "-", vehicle)
+    parts = [
+        safe_filename_token(vehicle),
+        safe_filename_token(base_info.version or "无基线"),
+        safe_filename_token(target_info.version),
+        mining_report_time.strftime("%Y-%m-%d-%H-%M"),
+    ]
+    stem = "-".join(parts)
+    directory = root / DEFAULT_REPORT_DIR
+    output = directory / f"{stem}.xlsx"
+    index = 2
+    while output.exists():
+        output = directory / f"{stem} ({index}).xlsx"
+        index += 1
+    return output
 
 
 def split_date_range(value: str) -> tuple[str, str]:
@@ -1450,6 +1471,9 @@ def build_report(
     target_input_path = target_path or default_side_input_path(root, "target", report_profile)
     base_reports = find_side_reports(root, "base", base_input_path, required=False)
     target_reports = find_side_reports(root, "target", target_input_path, required=True)
+    # Read before conversion: converted workbooks have a new modification time.
+    # Mining archive copies use copy2, preserving the original XLSX write time.
+    mining_report_time = datetime.fromtimestamp(choose_header_info(target_reports).path.stat().st_mtime)
     # Keep filename metadata even if a historical comparison workbook is converted.
     base_filename_info = (
         parse_named_report_filename(choose_header_info(base_reports).path, "base")
@@ -1469,7 +1493,7 @@ def build_report(
         choose_header_info(target_reports), target_vehicle, target_date, target_version
     )
     if output is None:
-        output = make_default_output_path(root, report_profile, target_info)
+        output = make_default_output_path(root, base_info, target_info, mining_report_time)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(template, output)
