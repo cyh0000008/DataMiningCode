@@ -2,7 +2,7 @@
 
 ## 1. 检查对象
 
-检查驾驶员油门 override 结束后的 5 秒窗口，判断纵向功能接管回来以后是否出现顿挫。
+检查驾驶员油门 override 结束后的 2 秒窗口，判断纵向功能接管回来以后是否出现顿挫。
 
 该指标按窗口统计 bad case：
 
@@ -32,16 +32,16 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 - 前一个采样点：`true`
 - 当前采样点：`false`
 
-以下降沿当前采样点作为窗口起点，向后取完整 5 秒：
+以下降沿当前采样点作为窗口起点，向后最多取 2 秒，数据不足时使用现有片段：
 
-- `post_override_window_seconds = 5.0`
+- `post_override_window_seconds = 2.0`
 
-窗口必须完整存在，且窗口内必须全程满足：
+窗口至少包含两个采样点，不要求恰好存在 +2 秒采样点；现有窗口内必须全程满足：
 
 - `IACCAct376 == true`
 - `IAccPdlOvrrdAtv == false`
 
-数据不足 5 秒、ACC 退出、或驾驶员再次 override 的窗口都不参与统计。
+数据不足 2 秒仍参与判断；窗口内 ACC 退出或驾驶员再次 override 时，整个窗口不参与统计。
 
 ## 4. 有效样本条件
 
@@ -214,7 +214,7 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 
 ## 13. 默认参数
 
-- `post_override_window_seconds = 5.0`
+- `post_override_window_seconds = 2.0`
 - `smoothing_window = 5`
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
@@ -235,12 +235,12 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 ## 14. 输出示例
 
 ```text
-[Scene release=102.300, start=102.300, end=107.300, duration=5.000, event_count=1, severity=116.400]
+[Scene release=102.300, start=102.300, end=104.300, duration=2.000, event_count=1, severity=116.400]
 [Event type=decel_jump+oscillation, start=103.100, end=104.600, duration=1.500, sample_count=16, amplitude=1.420, sign_flips=2, severity=116.400]
 ```
 
 ## 15. 边界说明
 
-- 完整 5 秒窗口是硬条件，不足 5 秒不统计。
+- 最多取 2 秒窗口，不足 2 秒时使用现有片段，至少需要两个采样点。
 - 窗口内 ACC 必须一直 active，override 必须一直 false。
 - 顿挫判定口径与 `acc_jerkiness` 一致，但当前代码是独立维护的；后续改基础顿挫算法时，需要同步检查这里的三类分支。

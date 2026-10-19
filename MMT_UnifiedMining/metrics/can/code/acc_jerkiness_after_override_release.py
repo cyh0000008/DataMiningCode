@@ -22,7 +22,7 @@ def _load_acc_jerkiness_module() -> object:
 _ACC_JERKINESS = _load_acc_jerkiness_module()
 
 METRIC_CATEGORY = "MPI"
-DEFAULT_POST_OVERRIDE_WINDOW_SECONDS = 5.0
+DEFAULT_POST_OVERRIDE_WINDOW_SECONDS = 2.0
 
 ACCELERATION_SIGNAL = _ACC_JERKINESS.ACCELERATION_SIGNAL
 SPEED_SIGNAL = _ACC_JERKINESS.SPEED_SIGNAL
@@ -202,8 +202,7 @@ def _collect_post_override_scenes(
         end_index = bisect_right(axis, window_end_target) - 1
         if end_index <= index:
             continue
-        if axis[end_index] < window_end_target:
-            continue
+        # Accept the available tail and do not require a sample exactly at +2 s.
         if not all(_as_bool(value) for value in acc_active_values[index : end_index + 1]):
             continue
         if any(_as_bool(value) for value in pedal_override_values[index : end_index + 1]):
