@@ -102,14 +102,14 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 
 - `min_sign_flips = 1`
 - `min_oscillation_amplitude = 0.75`
-- `min_event_duration_seconds = 1.00`
+- `min_event_duration_seconds = 0.50`（候选时长必须严格 >0.5 秒）
 - `max_event_duration_seconds = 4.00`
 
 如果连续振荡段超过 4 秒，代码会在长段内滑动搜索局部子窗口，保留严重度最高的那一段。
 
 短空洞合并阈值：
 
-- `merge_gap_seconds = 0.30`
+- `merge_gap_seconds = 0.0`（不跨间隔合并候选片段）
 
 ## 8. 长周期交替分支
 
@@ -157,7 +157,7 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 
 三类分支检出的事件统一按时间合并。事件重叠，或间隔不超过以下阈值时，合并为一个最终事件：
 
-- `merge_gap_seconds = 0.30`
+- `merge_gap_seconds = 0.0`（不跨间隔合并候选片段）
 
 合并后重新计算：
 
@@ -220,9 +220,9 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`
 - `amplitude_window_seconds = 1.00`
-- `min_event_duration_seconds = 1.00`
+- `min_event_duration_seconds = 0.50`（候选时长必须严格 >0.5 秒）
 - `max_event_duration_seconds = 4.00`
-- `merge_gap_seconds = 0.30`
+- `merge_gap_seconds = 0.0`（不跨间隔合并候选片段）
 - `long_pattern_min_phase_seconds = 1.5`
 - `long_pattern_max_phase_seconds = 3.5`
 - `long_pattern_min_phase_amplitude = 0.30`

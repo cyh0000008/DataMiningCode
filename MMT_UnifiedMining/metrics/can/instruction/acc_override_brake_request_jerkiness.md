@@ -56,9 +56,9 @@
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`
 - `amplitude_window_seconds = 1.00`
-- `min_event_duration_seconds = 1.00`
+- `min_event_duration_seconds = 0.50`（候选时长必须严格 >0.5 秒）
 - `max_event_duration_seconds = 4.00`
-- `merge_gap_seconds = 0.30`
+- `merge_gap_seconds = 0.0`（不跨间隔合并候选片段）
 - `long_pattern_min_phase_seconds = 1.5`
 - `long_pattern_max_phase_seconds = 3.5`
 - `long_pattern_min_phase_amplitude = 0.30`

@@ -193,7 +193,7 @@ METRIC_STANDARDS: dict[str, str] = {
     "制动跳变导致的实车加速度抖动": "ACC active且无override，AutoBrake 2->1->2中间态<=0.10s，随后1s减速度波动>2.0m/s2",
     "点刹": "ACC active且无override，无前车稳速或有前车稳定跟车中出现制动点刹；制动扭矩短脉冲0.08~1.50s，峰值突出>=180Nm，加速度下探>=0.2m/s2",
     "重制动": "ACC active且无override；主规则：1.6s内降幅>=3.0m/s2、斜率>=3.0m/s3，加速度<=-2.0m/s2持续>=0.20s，滤波jerk<=-2.0m/s3；补充：深短尖峰<=-2.7m/s2、降幅>=2.6m/s2、驻留<=0.12s、jerk<=-10，或深持续制动<=-2.7m/s2、降幅>=1.3m/s2、驻留>=0.35s、jerk<=-5",
-    "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，平滑加速度振荡幅值>=0.75、符号翻转>=1、时长1~4s，并通过驱动/制动扭矩校验",
+    "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，平滑加速度振荡幅值>=0.75、符号翻转>=1、候选时长>0.5s且<=4s，并通过驱动/制动扭矩校验",
     "Override后顿挫": "override释放后完整2s窗口（数据不足2s丢弃），窗口内持续ACC active且无再次override；按顿挫规则检测，按窗口计数",
     "Override后重制动": "override释放后5s内，加速度<-2.0m/s2且jerk<-3.0m/s3，持续>=0.20s",
     "行车断握手": "ACC active且仲裁状态=2，持续>=5s",
@@ -217,7 +217,7 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "不合理低速": "ACC active且无override/前车/cutin/曲率限速；SetSpeed波动<=0.1kph，表显车速>=5kph且稳定>=8s，波动<1.5kph，SetSpeed-v_max>=8kph",
     "点刹": "ACC active且无override；无前车稳速或稳定跟车中制动点刹。点刹：制动扭矩短脉冲0.08~1.50s、峰值突出>=180Nm、加速度下探>=0.2m/s2；无前车稳速：无前车/cutin、车速>5kph、稳定>=8s、车速波动<=2kph、SetSpeed波动<=0.1kph；稳定跟车：前车有效、距离5~100m、相对速度<=1.5m/s、稳定>=8s、车速波动<=5kph、前车距离波动<=10m",
     "重制动": "ACC active且无override；加速度<-2.0m/s2持续>=0.20s，1.0s回看窗内减速度跳变>=3.0m/s2且负向斜率>=3.0m/s3，相邻事件间隔<=0.50s合并",
-    "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，车速>0，顿挫1~4s，幅值>=0.75，符号翻转>=1，扭矩/jerk校验通过",
+    "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，车速>0，候选时长>0.5s且<=4s，幅值>=0.75，符号翻转>=1，扭矩/jerk校验通过",
     "控制抖动": "全程ACC active且车速>5kph，8s内驱动/制动扭矩抖动；驱动类acc_amp>=0.8m/s2，制动类acc_amp>=1.45m/s2",
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
 }

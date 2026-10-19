@@ -25,9 +25,9 @@ DEFAULT_MIN_OSCILLATION_AMPLITUDE = 0.75
 DEFAULT_MIN_SIGN_FLIPS = 1
 DEFAULT_SIGN_FLIP_MIN_STABLE_SAMPLES = 3
 DEFAULT_AMPLITUDE_WINDOW_SECONDS = 1.00
-DEFAULT_MIN_EVENT_DURATION_SECONDS = 1.00
+DEFAULT_MIN_EVENT_DURATION_SECONDS = 0.50
 DEFAULT_MAX_EVENT_DURATION_SECONDS = 4.00
-DEFAULT_MERGE_GAP_SECONDS = 0.30
+DEFAULT_MERGE_GAP_SECONDS = 0.0
 DEFAULT_LONG_PATTERN_MIN_PHASE_SECONDS = 1.5
 DEFAULT_LONG_PATTERN_MAX_PHASE_SECONDS = 3.5
 DEFAULT_LONG_PATTERN_MIN_PHASE_AMPLITUDE = 0.30
@@ -426,6 +426,8 @@ def evaluate_acc_jerkiness_from_axis(
         sign_flip_min_stable_samples,
         merge_gap_seconds,
     )
+    base_events = [event for event in base_events
+                   if float(event["end_timestamp"]) - float(event["start_timestamp"]) > min_event_duration_seconds]
     base_events = _filter_events_by_reversal_pattern(
         events=base_events,
         timestamps=candidate_timestamps,
@@ -654,12 +656,26 @@ def _filter_events_by_torque_match(
         if highpass_acc_rms < min_highpass_accel_rms or highpass_acc_peak < min_highpass_accel_peak:
             continue
 
-        drive_rate_peak, drive_rate_lag_s, drive_rate_peak_index = _local_positive_peak_near(
-            axis, drive_rate, positive_jerk_index, peak_match_window_seconds
+        drive_pair = _match_jerk_torque_peaks(
+            axis, jerk, drive_rate, finite_indices, 1,
+            min_positive_jerk_peak, min_drive_rate_peak_near_positive_jerk,
+            peak_match_window_seconds,
         )
-        brake_rate_peak, brake_rate_lag_s, brake_rate_peak_index = _local_positive_peak_near(
-            axis, brake_rate, negative_jerk_index, peak_match_window_seconds
+        brake_pair = _match_jerk_torque_peaks(
+            axis, jerk, brake_rate, finite_indices, -1,
+            -max_negative_jerk_peak, min_brake_rate_peak_near_negative_jerk,
+            peak_match_window_seconds,
         )
+        if drive_pair is None or brake_pair is None:
+            continue
+        positive_jerk_index, drive_rate_peak_index = drive_pair
+        negative_jerk_index, brake_rate_peak_index = brake_pair
+        positive_jerk_peak = float(jerk[positive_jerk_index])
+        negative_jerk_peak = float(jerk[negative_jerk_index])
+        drive_rate_peak = float(drive_rate[drive_rate_peak_index])
+        brake_rate_peak = float(brake_rate[brake_rate_peak_index])
+        drive_rate_lag_s = abs(float(axis[drive_rate_peak_index] - axis[positive_jerk_index]))
+        brake_rate_lag_s = abs(float(axis[brake_rate_peak_index] - axis[negative_jerk_index]))
         if drive_rate_peak < min_drive_rate_peak_near_positive_jerk:
             continue
         if brake_rate_peak < min_brake_rate_peak_near_negative_jerk:
@@ -872,7 +888,7 @@ def _build_event_details(
         slope_window = slope[start_index : end_index + 1]
         if not acc_window:
             continue
-        if segment.duration < min_event_duration_seconds or segment.duration > max_event_duration_seconds:
+        if segment.duration <= min_event_duration_seconds or segment.duration > max_event_duration_seconds:
             continue
 
         amplitude = _max_window_amplitude(timestamps, smoothed_acceleration, start_index, end_index, amplitude_window_seconds)
@@ -1081,7 +1097,7 @@ def _finalize_run(
         return
     duration = timestamps[run_end] - timestamps[run_start] if run_end > run_start else 0.0
     amplitude = _max_window_amplitude(timestamps, smoothed_acceleration, run_start, run_end, amplitude_window_seconds)
-    if flip_count < min_sign_flips or amplitude < min_oscillation_amplitude or duration < min_event_duration_seconds:
+    if flip_count < min_sign_flips or amplitude < min_oscillation_amplitude or duration <= min_event_duration_seconds:
         return
     if duration <= max_event_duration_seconds:
         for index in range(run_start, run_end + 1):
@@ -1133,7 +1149,7 @@ def _find_best_subwindow(
         while right + 1 <= run_end and timestamps[right + 1] - timestamps[left] <= max_event_duration_seconds:
             right += 1
         duration = timestamps[right] - timestamps[left] if right > left else 0.0
-        if duration >= min_event_duration_seconds:
+        if duration > min_event_duration_seconds:
             amplitude = _max_window_amplitude(timestamps, smoothed_acceleration, left, right, amplitude_window_seconds)
             sign_flips = _count_sign_flips(slope[left : right + 1], deadband, sign_flip_min_stable_samples)
             if amplitude >= min_oscillation_amplitude and sign_flips >= min_sign_flips:
@@ -1720,6 +1736,26 @@ def _finite_min(values: list[float]) -> float:
 def _finite_max(values: list[float]) -> float:
     finite = [float(value) for value in values if _is_finite(value)]
     return max(finite) if finite else float("nan")
+
+
+def _match_jerk_torque_peaks(
+    axis, jerk, torque_rate, indices, direction, min_jerk, min_rate, radius_seconds,
+) -> tuple[int, int] | None:
+    """Search local jerk and torque-rate peaks in both directions."""
+    indices = [int(index) for index in indices]
+    def peaks(values, sign, threshold):
+        return [index for pos, index in enumerate(indices)
+                if sign * values[index] >= threshold
+                and (pos == 0 or sign * values[index] >= sign * values[indices[pos - 1]])
+                and (pos == len(indices) - 1 or sign * values[index] >= sign * values[indices[pos + 1]])]
+    jerk_peaks = peaks(jerk, direction, min_jerk)
+    rate_peaks = peaks(torque_rate, 1, min_rate)
+    pairs = [(j, r) for j in jerk_peaks for r in rate_peaks
+             if abs(float(axis[j] - axis[r])) <= radius_seconds]
+    return max(pairs, key=lambda pair: (
+        direction * float(jerk[pair[0]]), float(torque_rate[pair[1]]),
+        -abs(float(axis[pair[0]] - axis[pair[1]])),
+    ), default=None)
 
 
 def _local_positive_peak_near(

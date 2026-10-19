@@ -189,6 +189,8 @@ def count_topic_acc_jerkiness_events(
         sign_flip_min_stable_samples,
         merge_gap_seconds,
     )
+    events = [event for event in events
+              if float(event["end_timestamp"]) - float(event["start_timestamp"]) > min_event_duration_seconds]
     events = _CAN._filter_events_by_reversal_pattern(
         events=events,
         timestamps=candidate_timestamps,

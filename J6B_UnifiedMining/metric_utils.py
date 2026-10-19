@@ -342,11 +342,11 @@ def jerkiness_events(frame: SignalFrame, valid: np.ndarray, accel: np.ndarray) -
     jerk = derivative(t, smoothed)
     signed = np.where(jerk > 0.8, 1, np.where(jerk < -0.8, -1, 0))
     candidate = np.logical_and(valid, signed != 0)
-    candidate = merge_short_gaps(t, candidate, 0.30)
+    # Preserve interruptions; do not bridge inactive or non-candidate samples.
     events: List[MetricEvent] = []
     for seg in mask_to_segments(t, candidate):
         duration = seg.duration(t)
-        if duration < 1.0 or duration > 4.0:
+        if duration <= 0.5 or duration > 4.0:
             continue
         acc_window = smoothed[seg.start : seg.end + 1]
         sign_window = signed[seg.start : seg.end + 1]

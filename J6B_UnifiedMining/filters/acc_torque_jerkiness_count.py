@@ -230,18 +230,26 @@ class AccTorqueJerkinessCountMetric(BaseMetric):
         if highpass_acc_peak < self.min_highpass_acc_peak:
             return False, None, {}
 
-        drive_rate_peak, drive_rate_lag_s, drive_rate_peak_index = local_positive_peak_near(
-            t,
-            drive_rate,
-            positive_jerk_index,
+        drive_pair = match_jerk_torque_peaks(
+            t, jerk, drive_rate, finite_indices, 1,
+            self.min_positive_jerk_peak, self.min_drive_rate_peak_near_positive_jerk,
             self.peak_match_window_s,
         )
-        brake_rate_peak, brake_rate_lag_s, brake_rate_peak_index = local_positive_peak_near(
-            t,
-            brake_rate,
-            negative_jerk_index,
+        brake_pair = match_jerk_torque_peaks(
+            t, jerk, brake_rate, finite_indices, -1,
+            -self.max_negative_jerk_peak, self.min_brake_rate_peak_near_negative_jerk,
             self.peak_match_window_s,
         )
+        if drive_pair is None or brake_pair is None:
+            return False, None, {}
+        positive_jerk_index, drive_rate_peak_index = drive_pair
+        negative_jerk_index, brake_rate_peak_index = brake_pair
+        positive_jerk_peak = float(jerk[positive_jerk_index])
+        negative_jerk_peak = float(jerk[negative_jerk_index])
+        drive_rate_peak = float(drive_rate[drive_rate_peak_index])
+        brake_rate_peak = float(brake_rate[brake_rate_peak_index])
+        drive_rate_lag_s = abs(float(t[drive_rate_peak_index] - t[positive_jerk_index]))
+        brake_rate_lag_s = abs(float(t[brake_rate_peak_index] - t[negative_jerk_index]))
         if drive_rate_peak < self.min_drive_rate_peak_near_positive_jerk:
             return False, None, {}
         if brake_rate_peak < self.min_brake_rate_peak_near_negative_jerk:
@@ -347,6 +355,26 @@ def finite_ratio(mask: np.ndarray) -> float:
     if values.size == 0:
         return 0.0
     return float(np.sum(values.astype(bool)) / values.size)
+
+
+def match_jerk_torque_peaks(
+    t, jerk, torque_rate, indices, direction, min_jerk, min_rate, radius_s,
+) -> Optional[Tuple[int, int]]:
+    """Match both sets of local peaks, retaining only valid pairs in this window."""
+    indices = [int(index) for index in indices]
+    def peaks(values, sign, threshold):
+        return [index for pos, index in enumerate(indices)
+                if sign * values[index] >= threshold
+                and (pos == 0 or sign * values[index] >= sign * values[indices[pos - 1]])
+                and (pos == len(indices) - 1 or sign * values[index] >= sign * values[indices[pos + 1]])]
+    jerk_peaks = peaks(jerk, direction, min_jerk)
+    rate_peaks = peaks(torque_rate, 1, min_rate)
+    pairs = [(j, r) for j in jerk_peaks for r in rate_peaks
+             if abs(float(t[j] - t[r])) <= radius_s]
+    return max(pairs, key=lambda pair: (
+        direction * float(jerk[pair[0]]), float(torque_rate[pair[1]]),
+        -abs(float(t[pair[0]] - t[pair[1]])),
+    ), default=None)
 
 
 def local_positive_peak_near(
