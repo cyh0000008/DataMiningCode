@@ -197,7 +197,7 @@ METRIC_STANDARDS: dict[str, str] = {
     "Override后顿挫": "override释放后完整2s窗口（数据不足2s丢弃），窗口内持续ACC active且无再次override；按顿挫规则检测，按窗口计数",
     "Override后重制动": "override释放后5s内，加速度<-2.0m/s2且jerk<-3.0m/s3，持续>=0.20s",
     "行车断握手": "ACC active且仲裁状态=2，持续>=5s",
-    "进Override后顿挫": "ACC active且override中制动请求<-0.2m/s2，按顿挫规则",
+    "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
     "起步顿挫": "起步1s窗口内，按顿挫规则",
 }
 
@@ -219,7 +219,7 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "重制动": "ACC active且无override；加速度<-2.0m/s2持续>=0.20s，1.0s回看窗内减速度跳变>=3.0m/s2且负向斜率>=3.0m/s3，相邻事件间隔<=0.50s合并",
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，车速>0，顿挫1~4s，幅值>=0.75，符号翻转>=1，扭矩/jerk校验通过",
     "控制抖动": "全程ACC active且车速>5kph，8s内驱动/制动扭矩抖动；驱动类acc_amp>=0.8m/s2，制动类acc_amp>=1.45m/s2",
-    "进Override后顿挫": "ACC active且override中，制动请求<-0.2m/s2，油门>0，按顿挫规则",
+    "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
 }
 
 PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {

@@ -21,9 +21,7 @@ def _load_acc_jerkiness_module() -> object:
 _ACC_JERKINESS = _load_acc_jerkiness_module()
 
 METRIC_CATEGORY = "MPI"
-BRAKE_REQUEST_ACCEL_SIGNAL = "Adaptive_Cruise_Command_Ext_1A3_M.IACCBSCE_ACCAccl"
 ACCELERATOR_PEDAL_POS_SIGNAL = "PPEI_Engine_General_Status_1_082_M2.IAccActPos"
-DEFAULT_BRAKE_REQUEST_ACCEL_THRESHOLD = -0.2
 
 ACCELERATION_SIGNAL = _ACC_JERKINESS.ACCELERATION_SIGNAL
 SPEED_SIGNAL = _ACC_JERKINESS.SPEED_SIGNAL
@@ -34,13 +32,11 @@ REQUIRED_SIGNALS = list(
     dict.fromkeys(
         list(_ACC_JERKINESS.REQUIRED_SIGNALS)
         + [
-            BRAKE_REQUEST_ACCEL_SIGNAL,
             ACCELERATOR_PEDAL_POS_SIGNAL,
         ]
     )
 )
 SIGNAL_KEYS = dict(_ACC_JERKINESS.SIGNAL_KEYS)
-SIGNAL_KEYS["brake_request_accel"] = BRAKE_REQUEST_ACCEL_SIGNAL
 SIGNAL_KEYS["accelerator_pedal_pos"] = ACCELERATOR_PEDAL_POS_SIGNAL
 
 
@@ -130,7 +126,6 @@ def count_acc_override_brake_request_jerkiness_events(
     decel_jump_min_rebound: float = DEFAULT_DECEL_JUMP_MIN_REBOUND,
     decel_jump_min_jump_slope: float = DEFAULT_DECEL_JUMP_MIN_JUMP_SLOPE,
     decel_jump_min_rebound_slope: float = DEFAULT_DECEL_JUMP_MIN_REBOUND_SLOPE,
-    brake_request_accel_threshold: float = DEFAULT_BRAKE_REQUEST_ACCEL_THRESHOLD,
     **torque_options: Any,
 ) -> dict[str, object]:
     session = session_or_h5_path if isinstance(session_or_h5_path, FolderSession) else FolderSession(session_or_h5_path)
@@ -139,7 +134,7 @@ def count_acc_override_brake_request_jerkiness_events(
     axis, accel_values_raw = session.get_signal_slice(SIGNAL_KEYS["acceleration"], start_timestamp, end_timestamp)
     accel_values = [float(value) for value in accel_values_raw]
     if len(axis) < 3:
-        return _empty_result(start_timestamp, end_timestamp, brake_request_accel_threshold)
+        return _empty_result(start_timestamp, end_timestamp)
 
     speed_values = [
         float(value)
@@ -153,9 +148,6 @@ def count_acc_override_brake_request_jerkiness_events(
     pedal_override_values = session.sample_signal_to_axis(
         SIGNAL_KEYS["pedal_override"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
-    brake_request_accel_values = session.sample_signal_to_axis(
-        SIGNAL_KEYS["brake_request_accel"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
-    )
     accelerator_pedal_pos_values = session.sample_signal_to_axis(
         SIGNAL_KEYS["accelerator_pedal_pos"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
@@ -163,13 +155,11 @@ def count_acc_override_brake_request_jerkiness_events(
     valid_mask = [
         _as_bool(acc_on)
         and _as_bool(override)
-        and float(brake_request_accel) < brake_request_accel_threshold
         and float(accelerator_pedal_pos) > 0.0
         and float(vehicle_speed) > 0.0
-        for acc_on, override, brake_request_accel, accelerator_pedal_pos, vehicle_speed in zip(
+        for acc_on, override, accelerator_pedal_pos, vehicle_speed in zip(
             acc_active_values,
             pedal_override_values,
-            brake_request_accel_values,
             accelerator_pedal_pos_values,
             speed_values,
         )
@@ -183,7 +173,7 @@ def count_acc_override_brake_request_jerkiness_events(
         start_timestamp=start_timestamp,
         end_timestamp=end_timestamp,
         metric_name="acc_override_brake_request_jerkiness",
-        method="acc_on_override_brake_request_torque_gated_jerkiness",
+        method="acc_on_override_torque_gated_jerkiness",
         smoothing_window=smoothing_window,
         deadband=deadband,
         min_oscillation_amplitude=min_oscillation_amplitude,
@@ -206,18 +196,13 @@ def count_acc_override_brake_request_jerkiness_events(
         decel_jump_min_rebound_slope=decel_jump_min_rebound_slope,
         **torque_options,
     )
-    result = dict(result)
-    result["parameters"] = {
-        "brake_request_accel_threshold": brake_request_accel_threshold,
-        **dict(result["parameters"]),
-    }
     return result
 
 
-def _empty_result(start_timestamp: float, end_timestamp: float, brake_request_accel_threshold: float) -> dict[str, object]:
+def _empty_result(start_timestamp: float, end_timestamp: float) -> dict[str, object]:
     return {
         "metric_name": "acc_override_brake_request_jerkiness",
-        "method": "acc_on_override_brake_request_torque_gated_jerkiness",
+        "method": "acc_on_override_torque_gated_jerkiness",
         "event_count": 0,
         "valid_sample_count": 0,
         "candidate_sample_count": 0,
@@ -225,7 +210,7 @@ def _empty_result(start_timestamp: float, end_timestamp: float, brake_request_ac
         "start_timestamp": start_timestamp,
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
-        "parameters": {"brake_request_accel_threshold": brake_request_accel_threshold},
+        "parameters": {},
         "events": [],
     }
 
