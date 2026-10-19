@@ -194,7 +194,7 @@ METRIC_STANDARDS: dict[str, str] = {
     "点刹": "ACC active且无override，无前车稳速或有前车稳定跟车中出现制动点刹；制动扭矩短脉冲0.08~1.50s，峰值突出>=180Nm，加速度下探>=0.2m/s2",
     "重制动": "ACC active且无override；主规则：1.6s内降幅>=3.0m/s2、斜率>=3.0m/s3，加速度<=-2.0m/s2持续>=0.20s，滤波jerk<=-2.0m/s3；补充：深短尖峰<=-2.7m/s2、降幅>=2.6m/s2、驻留<=0.12s、jerk<=-10，或深持续制动<=-2.7m/s2、降幅>=1.3m/s2、驻留>=0.35s、jerk<=-5",
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，平滑加速度振荡幅值>=0.75、符号翻转>=1、时长1~4s，并通过驱动/制动扭矩校验",
-    "Override后顿挫": "override释放后最多2s（不足使用现有片段），窗口内持续ACC active且无再次override；按顿挫规则检测，按窗口计数",
+    "Override后顿挫": "override释放后完整2s窗口（数据不足2s丢弃），窗口内持续ACC active且无再次override；按顿挫规则检测，按窗口计数",
     "Override后重制动": "override释放后5s内，加速度<-2.0m/s2且jerk<-3.0m/s3，持续>=0.20s",
     "行车断握手": "ACC active且仲裁状态=2，持续>=5s",
     "进Override后顿挫": "ACC active且override中制动请求<-0.2m/s2，按顿挫规则",

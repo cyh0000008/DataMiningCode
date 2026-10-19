@@ -23,10 +23,13 @@ class AccJerkinessAfterOverrideReleaseMetric(AccTorqueJerkinessCountMetric):
         total_windows = 0
         bad_windows = []
         for start in release_indices:
+            window_end_target = frame.time_s[start] + self.post_override_window_s
+            if frame.time_s[-1] < window_end_target:
+                continue
             end = int(np.searchsorted(
-                frame.time_s, frame.time_s[start] + self.post_override_window_s, side="right"
+                frame.time_s, window_end_target, side="right"
             )) - 1
-            # Use the available tail when fewer than two seconds remain.
+            # Full coverage is required, but no sample exactly at +2 s is needed.
             if end <= start:
                 continue
             window = slice(start, end + 1)

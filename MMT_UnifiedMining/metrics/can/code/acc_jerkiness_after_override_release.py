@@ -199,10 +199,12 @@ def _collect_post_override_scenes(
 
         release_timestamp = float(axis[index])
         window_end_target = release_timestamp + window_seconds
+        if axis[-1] < window_end_target:
+            continue
         end_index = bisect_right(axis, window_end_target) - 1
         if end_index <= index:
             continue
-        # Accept the available tail and do not require a sample exactly at +2 s.
+        # Full coverage is required, but no sample exactly at +2 s is needed.
         if not all(_as_bool(value) for value in acc_active_values[index : end_index + 1]):
             continue
         if any(_as_bool(value) for value in pedal_override_values[index : end_index + 1]):

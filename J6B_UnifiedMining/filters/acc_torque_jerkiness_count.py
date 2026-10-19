@@ -43,11 +43,11 @@ class AccTorqueJerkinessCountMetric(BaseMetric):
     max_negative_jerk_peak = -4.0
     min_abs_jerk_p95 = 3.5
     min_highpass_acc_rms = 0.10
-    min_highpass_acc_peak = 0.25
+    min_highpass_acc_peak = 0.4
     min_drive_torque_range = 80.0
     min_brake_torque_range = 120.0
-    min_drive_rate_peak_near_positive_jerk = 500.0
-    min_brake_rate_peak_near_negative_jerk = 800.0
+    min_drive_rate_peak_near_positive_jerk = 1500.0
+    min_brake_rate_peak_near_negative_jerk = 2500.0
     min_direction_samples = 3
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
