@@ -9,9 +9,11 @@ from metric_utils import (
     MetricEvent,
     MetricResult,
     Segment,
+    acc_activation_start_mask,
     derivative,
     event_from_segment,
     jerkiness_events,
+    post_override_release_mask,
     result_from_events,
     time_window_moving_average,
 )
@@ -50,7 +52,22 @@ class AccTorqueJerkinessCountMetric(BaseMetric):
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
         valid = self._base_valid(frame)
-        return self._evaluate_with_valid(frame, valid)
+        excluded = np.logical_or(
+            frame.col("pedal_override_flag").astype(bool),
+            post_override_release_mask(frame, 2.0),
+        )
+        excluded |= acc_activation_start_mask(frame, 1.0)
+        result = self._evaluate_with_valid(frame, valid & ~excluded)
+        # A merged/expanded event must not cross into a separately counted scene.
+        events = []
+        for event in result.events:
+            left = int(np.searchsorted(frame.time_s, event.start_s, side="left"))
+            right = int(np.searchsorted(frame.time_s, event.end_s, side="right"))
+            if not np.any(excluded[left:right]):
+                events.append(event)
+        return result_from_events(
+            self.name, self.category, frame, len(events), events, self.result_mode
+        )
 
     def _base_valid(self, frame: SignalFrame) -> np.ndarray:
         valid = frame.col("acc_active_flag").astype(bool)

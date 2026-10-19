@@ -200,6 +200,8 @@ def count_acc_jerkiness_events(
         for vehicle_speed, acc_on, pedal in zip(speed_values, acc_active_values, pedal_override_values)
     ]
 
+    excluded_scene_mask = ordinary_jerkiness_excluded_mask(axis, acc_active_values, pedal_override_values)
+    valid_mask = [valid and not excluded for valid, excluded in zip(valid_mask, excluded_scene_mask)]
     return evaluate_acc_jerkiness_from_axis(
         session=session,
         axis=axis,
@@ -209,6 +211,7 @@ def count_acc_jerkiness_events(
         end_timestamp=end_timestamp,
         metric_name="acc_jerkiness",
         method="torque_gated_oscillation_based_or_extended",
+        excluded_scene_mask=excluded_scene_mask,
         smoothing_window=smoothing_window,
         deadband=deadband,
         min_oscillation_amplitude=min_oscillation_amplitude,
@@ -295,6 +298,7 @@ def evaluate_acc_jerkiness_from_axis(
     min_drive_rate_peak_near_positive_jerk: float = DEFAULT_MIN_DRIVE_RATE_PEAK_NEAR_POSITIVE_JERK,
     min_brake_rate_peak_near_negative_jerk: float = DEFAULT_MIN_BRAKE_RATE_PEAK_NEAR_NEGATIVE_JERK,
     min_direction_samples: int = DEFAULT_MIN_DIRECTION_SAMPLES,
+    excluded_scene_mask: list[bool] | None = None,
 ) -> dict[str, object]:
     parameters = _jerkiness_parameters(
         smoothing_window=smoothing_window,
@@ -476,6 +480,8 @@ def evaluate_acc_jerkiness_from_axis(
         min_brake_rate_peak_near_negative_jerk=min_brake_rate_peak_near_negative_jerk,
         min_direction_samples=min_direction_samples,
     )
+    if excluded_scene_mask is not None:
+        events = exclude_special_scene_events(events, axis, excluded_scene_mask)
     merged_event_mask = _events_to_mask(candidate_timestamps, events)
     return _make_jerkiness_result(
         metric_name,
@@ -488,6 +494,40 @@ def evaluate_acc_jerkiness_from_axis(
         end_timestamp,
         parameters,
     )
+
+
+def ordinary_jerkiness_excluded_mask(
+    axis: list[float],
+    acc_active_values: list[object],
+    pedal_override_values: list[object],
+) -> list[bool]:
+    """Reserve override, release +2s and ACC activation +1s for dedicated metrics."""
+    active = [_as_bool(value) for value in acc_active_values]
+    override = [_as_bool(value) for value in pedal_override_values]
+    excluded = list(override)
+    for index in range(1, len(axis)):
+        window_seconds = 0.0
+        if override[index - 1] and not override[index]:
+            window_seconds = 2.0
+        if not active[index - 1] and active[index]:
+            window_seconds = max(window_seconds, 1.0)
+        if window_seconds:
+            end = bisect_right(axis, axis[index] + window_seconds)
+            excluded[index:end] = [True] * (end - index)
+    return excluded
+
+
+def exclude_special_scene_events(
+    events: list[dict[str, Any]], axis: list[float], excluded: list[bool]
+) -> list[dict[str, Any]]:
+    """Reject events spanning reserved scenes, including merged/expanded events."""
+    return [
+        event for event in events
+        if not any(excluded[
+            bisect_left(axis, float(event["start_timestamp"])):
+            bisect_right(axis, float(event["end_timestamp"]))
+        ])
+    ]
 
 
 def sample_torque_signals_to_axis(

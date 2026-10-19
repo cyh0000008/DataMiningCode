@@ -107,6 +107,10 @@ def count_topic_acc_jerkiness_events(
         for vehicle_speed, acc_on, override in zip(series["speed"], series["acc_active"], series["pedal_override"])
     ]
 
+    excluded_scene_mask = _CAN.ordinary_jerkiness_excluded_mask(
+        axis, series["acc_active"], series["pedal_override"]
+    )
+    valid_mask = [valid and not excluded for valid, excluded in zip(valid_mask, excluded_scene_mask)]
     smoothed_acceleration = _CAN._moving_average(accel_values, smoothing_window)
     slope: list[float] = []
     for index in range(1, len(smoothed_acceleration)):
@@ -196,6 +200,7 @@ def count_topic_acc_jerkiness_events(
         min_jump_slope=decel_jump_min_jump_slope,
         min_rebound_slope=decel_jump_min_rebound_slope,
     )
+    events = _CAN.exclude_special_scene_events(events, axis, excluded_scene_mask)
     events = filter_events_started_in_primary(events, float(series["primary_end_seconds"]))
     merged_event_mask = _CAN._events_to_mask(candidate_timestamps, events)
     max_event_severity = max((float(event["severity"]) for event in events), default=0.0)
