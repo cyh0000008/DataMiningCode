@@ -109,6 +109,9 @@ SIGNAL_MAP: dict[str, tuple[str, str, str]] = {
     "Override后顿挫": ("can", "acc_jerkiness_after_override_release", "MPI"),
     "Override后重制动": ("can", "acc_heavy_braking_after_override_release_count", "MPI"),
     "行车断握手": ("can", "acc_lost_arbitration", "MPI"),
+    "ABS触发关联ACC退出": ("can", "acc_exit_after_abs", "MPI"),
+    "TCS触发关联ACC退出": ("can", "acc_exit_after_tcs", "MPI"),
+    "VSE触发关联ACC退出": ("can", "acc_exit_after_vse", "MPI"),
     "进Override后顿挫": ("can", "acc_override_brake_request_jerkiness", "MPI"),
     "起步顿挫": ("can", "acc_start_no_override_jerkiness", "MPI"),
 }
@@ -150,6 +153,9 @@ J6B_METRIC_NAMES = frozenset(
         "Override后顿挫",
         "Override后重制动",
         "行车断握手",
+        "ABS触发关联ACC退出",
+        "TCS触发关联ACC退出",
+        "VSE触发关联ACC退出",
         "进Override后顿挫",
         "起步顿挫",
     }
@@ -163,6 +169,9 @@ PROFILE_SIGNAL_MAP_OVERRIDES: dict[str, dict[str, tuple[str, str, str]]] = {
 
 
 METRIC_STANDARDS: dict[str, str] = {
+    "ABS触发关联ACC退出": "ABS由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
+    "TCS触发关联ACC退出": "TCS由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
+    "VSE触发关联ACC退出": "VSE由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
     "起步最大加速度": "1.0~3.0m/s2",
     "起步最大jerk": "<=3.5m/s3",
     "初段建立时间": "达到3.33m/s所需时间：1.0~3.5s",

@@ -41,6 +41,11 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 - CPI 指标沿用原口径：无 Bad Case 时显示 `100.0(总Case/Bad Case)`，有 Bad Case 时显示 `总Case / Bad Case`。
 - MPI 指标使用里程归一化口径：`指标值 = 当前统计数据总里程 km / 总Case数`，显示为 `x.xxxkm/case(总里程/总Case)`。
 
+新增的 `acc_exit_after_abs`、`acc_exit_after_tcs`、`acc_exit_after_vse` 三个 MPI，
+分别统计 ABS/TCS/VSE 激活与 ACC 退出的时序关联：功能从未激活变为激活时 ACC
+须处于激活状态，且 ACC 在随后 1 秒内从激活变为未激活。每次 ACC 退出每个分项最多计一次；
+该规则表示时序关联，不等同于已证明因果。事件明细包含功能激活时间、ACC 退出时间和时间差。
+
 总里程由 `VehOdo` 计算：每个 H5 文件取有效 `VehOdo` 末值 - 首值，所有文件相加。当前配置路径为 `CAN0/Vehicle_Odometer.IVehOdo`，有效位为 `CAN0/Vehicle_Odometer.IVehOdoV`；如 H5 中 `VehOdo` 不是 km 单位，调整 `defaults.odometer_scale_to_km` 即可。
 
 ## 信号路径规则

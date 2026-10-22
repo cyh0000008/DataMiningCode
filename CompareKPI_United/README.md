@@ -126,6 +126,9 @@ python .\mpi_cpi_compare.py `
 - target 更好时标绿色，更差时标红色。
 - 无法解析指标值时，退回比较 bad case 数量。
 
+J6B 和 MMT 模板底部均包含 ABS、TCS、VSE 激活关联 ACC 退出三条 MPI。它们按功能激活后
+1 秒内出现 ACC 退出的时序关联规则计数，不能视为已证明因果。
+
 ## 新增指标
 
 新增指标时需要同步更新：
