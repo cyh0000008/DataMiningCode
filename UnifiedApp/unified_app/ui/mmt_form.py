@@ -63,6 +63,11 @@ class MMTForm(QWidget):
         self.software_version_edit = QLineEdit()
         form.addRow("当前报告软件版本：", self.software_version_edit)
 
+        self.powertrain_combo = QComboBox()
+        self.powertrain_combo.addItems(["PHEV/BEV", "ICE"])
+        self.powertrain_combo.setCurrentText("PHEV/BEV")
+        form.addRow("动力形式：", self.powertrain_combo)
+
         template_row = QHBoxLayout()
         self.template_edit = QLineEdit(str(self._default_template_path()))
         template_row.addWidget(self.template_edit)
@@ -212,6 +217,7 @@ class MMTForm(QWidget):
     def _collect_spec(self) -> MMTJobSpec:
         return MMTJobSpec(
             task_name=self.task_name_edit.text(),
+            powertrain_type=self.powertrain_combo.currentText(),
             template_config_path=self.template_edit.text().strip(),
             source_path=self.source_path_edit.text().strip(),
             query_date=self.query_date_edit.text().strip(),
@@ -235,6 +241,9 @@ class MMTForm(QWidget):
 
     def _apply_spec(self, spec: MMTJobSpec) -> None:
         self.task_name_edit.setText(spec.task_name)
+        powertrain_index = self.powertrain_combo.findText(spec.powertrain_type)
+        if powertrain_index >= 0:
+            self.powertrain_combo.setCurrentIndex(powertrain_index)
         if spec.template_config_path:
             self.template_edit.setText(spec.template_config_path)
         self.source_path_edit.setText(spec.source_path)

@@ -31,6 +31,7 @@ def _from_dict(cls, data: Dict[str, Any]):
 class J6BJobSpec:
     vehicle: str = ""
     software_version: str = ""
+    powertrain_type: str = "ICE"
     task_name: str = ""
     template_config_path: str = ""
     input_paths: List[str] = field(default_factory=list)
@@ -62,6 +63,7 @@ class J6BJobSpec:
 class MMTJobSpec:
     vehicle: str = ""
     software_version: str = ""
+    powertrain_type: str = "PHEV/BEV"
     task_name: str = ""
     template_config_path: str = ""
     source_path: str = ""

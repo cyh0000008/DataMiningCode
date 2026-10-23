@@ -52,6 +52,9 @@ def prepare_j6b_config(template_path: Path, spec: J6BJobSpec) -> Path:
     template_dir = template_path.parent
     data = _load_template(template_path)
 
+    if spec.powertrain_type not in ("PHEV/BEV", "ICE"):
+        raise ValueError("动力形式必须为 PHEV/BEV 或 ICE")
+    data["powertrain_type"] = spec.powertrain_type
     if spec.input_paths:
         data["input_path"] = list(spec.input_paths)
     if spec.date_range.strip() or spec.date_range == "":
@@ -83,6 +86,9 @@ def prepare_mmt_config(template_path: Path, spec: MMTJobSpec) -> Path:
     template_dir = template_path.parent
     data = _load_template(template_path)
 
+    if spec.powertrain_type not in ("PHEV/BEV", "ICE"):
+        raise ValueError("动力形式必须为 PHEV/BEV 或 ICE")
+    data["powertrain_type"] = spec.powertrain_type
     if spec.source_path.strip():
         data["source_path"] = spec.source_path.strip()
     data["query_date"] = spec.query_date.strip()

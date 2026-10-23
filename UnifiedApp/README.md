@@ -55,6 +55,9 @@ python J6B_UnifiedMining/DataMining.py <临时生成的config.json>
 （默认 `J6B_UnifiedMining/config.json`）里原样保留，只覆盖表单里填写的部分，
 生成一份临时 config.json 提交运行，运行结束后自动清理。
 
+“动力形式”在 J6B 挖掘页的运行参数中选择 `PHEV/BEV` 或 `ICE`，所选值会覆盖模板配置中的
+`powertrain_type`，用于选择对应的指标筛选阈值；同时会保存在任务预设中。
+
 表单下方的“挖掘完成后自动生成对比报告”默认勾选：挖掘成功后会从 stdout 里
 `Report written: <路径>` 这一行捕获本次生成的报告路径，作为对比报告的
 `--target` 自动提交一个对比任务（`--report-profile J6B`）。可选填写一个
@@ -78,6 +81,9 @@ python J6B_UnifiedMining/DataMining.py <临时生成的config.json>
 ```bash
 python MMT_UnifiedMining/DataMining.py --config <临时生成的config.json> --resume auto
 ```
+
+MMT 挖掘页也可在运行参数中选择动力形式（`PHEV/BEV` 或 `ICE`）；所选值会覆盖模板配置中的
+`powertrain_type`、保存在任务预设中，并传入 Topic 指标判定。
 
 同样以模板配置合并覆盖的方式生成临时配置；`pipelines` 内每个 pipeline 的
 `func_folder_path` 等相对路径会在写出前自动转换为绝对路径，避免因为临时文件

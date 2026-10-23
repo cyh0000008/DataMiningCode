@@ -64,6 +64,11 @@ class J6BForm(QWidget):
         self.software_version_edit = QLineEdit()
         form.addRow("当前报告软件版本：", self.software_version_edit)
 
+        self.powertrain_combo = QComboBox()
+        self.powertrain_combo.addItems(["PHEV/BEV", "ICE"])
+        self.powertrain_combo.setCurrentText("ICE")
+        form.addRow("动力形式：", self.powertrain_combo)
+
         template_row = QHBoxLayout()
         self.template_edit = QLineEdit(str(self._default_template_path()))
         template_row.addWidget(self.template_edit)
@@ -197,6 +202,7 @@ class J6BForm(QWidget):
         input_paths: List[str] = [self.input_list.item(i).text() for i in range(self.input_list.count())]
         return J6BJobSpec(
             task_name=self.task_name_edit.text(),
+            powertrain_type=self.powertrain_combo.currentText(),
             template_config_path=self.template_edit.text().strip(),
             input_paths=input_paths,
             date_range=self.date_range_edit.text().strip(),
@@ -214,6 +220,9 @@ class J6BForm(QWidget):
 
     def _apply_spec(self, spec: J6BJobSpec) -> None:
         self.task_name_edit.setText(spec.task_name)
+        powertrain_index = self.powertrain_combo.findText(spec.powertrain_type)
+        if powertrain_index >= 0:
+            self.powertrain_combo.setCurrentIndex(powertrain_index)
         if spec.template_config_path:
             self.template_edit.setText(spec.template_config_path)
         self.input_list.clear()
