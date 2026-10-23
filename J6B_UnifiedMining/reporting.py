@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, TextIO
 
@@ -38,6 +39,7 @@ class StreamingReportWriter:
         self.report_path = self.output_dir / report_filename
         metric_list = list(metrics)
         self.metric_categories = {metric.name: metric.category for metric in metric_list}
+        self.metric_modes = {metric.name: metric.result_mode for metric in metric_list}
         self.metric_order = sorted(
             [metric.name for metric in metric_list],
             key=lambda metric_name: metric_report_sort_key(
@@ -54,6 +56,8 @@ class StreamingReportWriter:
                 "distance_by_path": {},
                 "result_count": 0,
                 "detail_count": 0,
+                "measurement_sum": 0.0,
+                "measurement_count": 0,
             }
             for metric_name in self.metric_order
         }
@@ -86,7 +90,10 @@ class StreamingReportWriter:
         for metric_name in self.metric_order:
             category = self.metric_categories.get(metric_name, "CPI")
             sheet = self.workbook.create_sheet(safe_sheet_name("%s_%s" % (category, metric_name), self.workbook.sheetnames))
-            sheet.append(DETAIL_HEADERS)
+            headers = list(DETAIL_HEADERS)
+            if self.metric_modes.get(metric_name) == "measurement_mean":
+                headers[1] = "有效样本数据列表"
+            sheet.append(headers)
             self.metric_sheets[metric_name] = sheet
         self.skipped_sheet = self.workbook.create_sheet(safe_sheet_name("跳过指标", self.workbook.sheetnames))
         self.skipped_sheet.append(["指标类型", "指标名称", "文件路径", "缺失字段", "缺失信号"])
@@ -106,11 +113,16 @@ class StreamingReportWriter:
         for metric_name in self.metric_order:
             summary = self.summaries[metric_name]
             if summary["detail_count"] == 0:
+                empty_label = (
+                    "无有效样本"
+                    if self.metric_modes.get(metric_name) == "measurement_mean"
+                    else "无Bad_Case"
+                )
                 self.metric_sheets[metric_name].append([
                     summary["category"],
-                    "无Bad_Case",
+                    empty_label,
                     0,
-                    "无Bad_Case",
+                    empty_label,
                     "",
                     "",
                 ])
@@ -121,7 +133,9 @@ class StreamingReportWriter:
                 summary["total_cases"],
                 summary["bad_cases"],
                 summary["skipped_count"],
-                metric_value_display(
+                measurement_summary_display(summary)
+                if self.metric_modes.get(metric_name) == "measurement_mean"
+                else metric_value_display(
                     summary["category"],
                     summary["total_cases"],
                     summary["bad_cases"],
@@ -188,6 +202,14 @@ class StreamingReportWriter:
         summary["total_cases"] += result.total_cases
         summary["bad_cases"] += result.bad_cases
         summary["result_count"] += 1
+        if result.result_mode == "measurement_mean":
+            values = [
+                float(event.values["measurement_value"])
+                for event in result.events
+                if _is_finite_number(event.values.get("measurement_value"))
+            ]
+            summary["measurement_sum"] += sum(values)
+            summary["measurement_count"] += len(values)
         if result_status(result) == "SKIPPED":
             summary["skipped_count"] += 1
         if result.distance_km is not None and result.source_path not in summary["distance_by_path"]:
@@ -281,6 +303,13 @@ def write_summary_sheet(
         bad_cases = sum(item.bad_cases for item in results)
         skipped_count = sum(1 for item in results if result_status(item) == "SKIPPED")
         distance_km = sum_distance_km(results)
+        measurement_values = [
+            float(event.values["measurement_value"])
+            for item in results
+            if item.result_mode == "measurement_mean"
+            for event in item.events
+            if _is_finite_number(event.values.get("measurement_value"))
+        ]
         sheet.cell(row=row_index, column=1, value=category)
         sheet.cell(row=row_index, column=2, value=metric_name)
         sheet.cell(row=row_index, column=3, value=total_cases)
@@ -289,7 +318,11 @@ def write_summary_sheet(
         sheet.cell(
             row=row_index,
             column=6,
-            value=metric_value_display(category, total_cases, bad_cases, distance_km),
+            value=(
+                measurement_values_display(measurement_values)
+                if measurement_values or any(item.result_mode == "measurement_mean" for item in results)
+                else metric_value_display(category, total_cases, bad_cases, distance_km)
+            ),
         )
         for col in range(1, 7):
             sheet.cell(row=row_index, column=col).alignment = center
@@ -299,7 +332,8 @@ def write_summary_sheet(
 def add_metric_sheet(workbook: Workbook, category: str, metric_name: str, results: List[MetricResult]) -> None:
     sheet_name = safe_sheet_name("%s_%s" % (category, metric_name), workbook.sheetnames)
     sheet = workbook.create_sheet(sheet_name)
-    headers = ["指标类型", "Bad_Case数据列表", "问题严重程度得分", "问题内容", "问题分析", "分析截图"]
+    is_measurement = any(result.result_mode == "measurement_mean" for result in results)
+    headers = ["指标类型", "有效样本数据列表" if is_measurement else "Bad_Case数据列表", "问题严重程度得分", "问题内容", "问题分析", "分析截图"]
     header_font = Font(bold=True)
     center = Alignment(horizontal="center", vertical="center")
     for col, title in enumerate(headers, 1):
@@ -319,9 +353,9 @@ def add_metric_sheet(workbook: Workbook, category: str, metric_name: str, result
 
     if row == 2:
         sheet.cell(row=2, column=1, value=category)
-        sheet.cell(row=2, column=2, value="无Bad_Case")
+        sheet.cell(row=2, column=2, value="无有效样本" if is_measurement else "无Bad_Case")
         sheet.cell(row=2, column=3, value=0)
-        sheet.cell(row=2, column=4, value="无Bad_Case")
+        sheet.cell(row=2, column=4, value="无有效样本" if is_measurement else "无Bad_Case")
 
 
 def add_skipped_metrics_sheet(workbook: Workbook, results_by_metric: Mapping[str, List[MetricResult]]) -> None:
@@ -361,12 +395,7 @@ def metric_csv_row(result: MetricResult) -> Dict[str, Any]:
         "缺失信号": format_missing_signal_mapping(result.missing_signals),
         "总Case": result.total_cases,
         "Bad Case": result.bad_cases,
-        "指标值": metric_value_display(
-            result.category,
-            result.total_cases,
-            result.bad_cases,
-            result.distance_km,
-        ),
+        "指标值": metric_result_display(result),
         "严重程度得分": result.severity_score,
     }
 
@@ -381,18 +410,8 @@ def metric_json_payload(result: MetricResult) -> Dict[str, Any]:
         "distance_status": result.distance_status,
         "total_cases": result.total_cases,
         "bad_cases": result.bad_cases,
-        "metric_value": metric_value_value(
-            result.category,
-            result.total_cases,
-            result.bad_cases,
-            result.distance_km,
-        ),
-        "metric_value_display": metric_value_display(
-            result.category,
-            result.total_cases,
-            result.bad_cases,
-            result.distance_km,
-        ),
+        "metric_value": metric_result_value(result),
+        "metric_value_display": metric_result_display(result),
         "severity_score": result.severity_score,
         "runtime_s": result.runtime_s,
         "error": result.error,
@@ -447,6 +466,7 @@ def metric_report_sort_key(metric_name: str, category: str) -> tuple[int, str, s
 
 def metric_scene_group(metric_name: str) -> str:
     groups = (
+        "driving_uninterfered_accel",
         "abs",
         "acc",
         "curvature",
@@ -509,6 +529,59 @@ def metric_value_display(
     if bad_cases == 0:
         return "100.0(%d/%d)" % (total_cases, bad_cases)
     return "%.1f(%d/%d)" % (float(value), total_cases, bad_cases)
+
+
+def metric_result_value(result: MetricResult) -> Any:
+    if result.result_mode == "measurement_mean":
+        values = [
+            float(event.values["measurement_value"])
+            for event in result.events
+            if _is_finite_number(event.values.get("measurement_value"))
+        ]
+        return sum(values) / len(values) if values else None
+    return metric_value_value(
+        result.category,
+        result.total_cases,
+        result.bad_cases,
+        result.distance_km,
+    )
+
+
+def metric_result_display(result: MetricResult) -> str:
+    if result.result_mode == "measurement_mean":
+        values = [
+            float(event.values["measurement_value"])
+            for event in result.events
+            if _is_finite_number(event.values.get("measurement_value"))
+        ]
+        return measurement_values_display(values)
+    return metric_value_display(
+        result.category,
+        result.total_cases,
+        result.bad_cases,
+        result.distance_km,
+    )
+
+
+def measurement_values_display(values: Iterable[float]) -> str:
+    values = list(values)
+    if not values:
+        return "N/A"
+    return "%.3f (n=%d)" % (sum(values) / len(values), len(values))
+
+
+def measurement_summary_display(summary: Mapping[str, Any]) -> str:
+    count = int(summary.get("measurement_count", 0))
+    if count <= 0:
+        return "N/A"
+    return "%.3f (n=%d)" % (float(summary.get("measurement_sum", 0.0)) / count, count)
+
+
+def _is_finite_number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def safe_sheet_name(name: str, existing: Iterable[str]) -> str:

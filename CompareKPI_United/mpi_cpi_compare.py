@@ -116,6 +116,26 @@ SIGNAL_MAP: dict[str, tuple[str, str, str]] = {
     "起步顿挫": ("can", "acc_start_no_override_jerkiness", "MPI"),
 }
 
+DRIVING_ACCEL_SPEED_BANDS = (
+    ("0_30", "0-30 km/h"),
+    ("30_60", "30-60 km/h"),
+    ("60_90", "60-90 km/h"),
+    ("90_plus", ">=90 km/h"),
+)
+DRIVING_ACCEL_MEASURES = (
+    ("max_acc", "最大加速度"),
+    ("accel_build_time", "加速建立时间"),
+    ("avg_acc", "平均加速度"),
+)
+DRIVING_ACCEL_METRIC_NAMES: set[str] = set()
+for measure_key, measure_label in DRIVING_ACCEL_MEASURES:
+    for band_key, band_label in DRIVING_ACCEL_SPEED_BANDS:
+        display_name = f"{measure_label}（{band_label}）"
+        english_name = f"driving_uninterfered_accel_{measure_key}_{band_key}"
+        normalized_name = display_name.replace(" ", "")
+        SIGNAL_MAP[normalized_name] = ("topic", english_name, "CPI")
+        DRIVING_ACCEL_METRIC_NAMES.add(display_name)
+
 
 REPORT_PROFILE_J6B = "J6B"
 REPORT_PROFILE_MMT = "MMT"
@@ -159,7 +179,7 @@ J6B_METRIC_NAMES = frozenset(
         "进Override后顿挫",
         "起步顿挫",
     }
-)
+) | frozenset(DRIVING_ACCEL_METRIC_NAMES)
 
 PROFILE_SIGNAL_MAP_OVERRIDES: dict[str, dict[str, tuple[str, str, str]]] = {
     REPORT_PROFILE_J6B: {
@@ -209,6 +229,13 @@ METRIC_STANDARDS: dict[str, str] = {
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
     "起步顿挫": "起步1s窗口内，按顿挫规则",
 }
+for metric_name in DRIVING_ACCEL_METRIC_NAMES:
+    METRIC_STANDARDS[metric_name.replace(" ", "")] = (
+        "ACC 激活且无 override/前车/cut-in/红灯；停止线距离>50m；Fusion 前方目标状态有效；"
+        "SetSpeed>初始车速+22km/h；"
+        "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
+        "平滑车速未持续下降超过1km/h；报告事件均值。"
+    )
 
 # J6B 专用标准只覆盖当前模板已有指标；不额外引入 J6B_UnifiedMining
 # filters 中存在但模板未放入的指标。
@@ -230,6 +257,12 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "控制抖动": "全程ACC active且车速>5kph，8s内驱动/制动扭矩抖动；驱动类acc_amp>=0.8m/s2，制动类acc_amp>=1.45m/s2",
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
 }
+for metric_name in DRIVING_ACCEL_METRIC_NAMES:
+    J6B_METRIC_STANDARDS[metric_name.replace(" ", "")] = (
+        "ACC 激活且无 override/前车/cut-in；SetSpeed>初始车速+22km/h；"
+        "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
+        "平滑车速未持续下降超过1km/h；报告事件均值。J6B 暂无红灯/停止线信号映射，未应用该筛选。"
+    )
 
 PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {
     REPORT_PROFILE_J6B: J6B_METRIC_STANDARDS,
@@ -1125,6 +1158,20 @@ def compare_metric(base: MetricValue, target: MetricValue) -> tuple[str, float |
         return "无法比较", number_diff, bad_diff, "缺少可比较数值"
 
 
+def compare_measurement(
+    base: MetricValue,
+    target: MetricValue,
+) -> tuple[str, float | None, float | None, str]:
+    number_diff = (
+        target.number - base.number
+        if base.number is not None and target.number is not None
+        else None
+    )
+    if base.raw in (None, "") or target.raw in (None, "") or base.number is None or target.number is None:
+        return "缺失", number_diff, None, "缺少base或target测量值"
+    return "数值对比", number_diff, None, "展示样本均值及差值；未定义优劣阈值，不作优劣着色"
+
+
 def color_target_cell(cell, result: str) -> None:
     if result == "提升":
         cell.fill = GREEN_FILL
@@ -1552,8 +1599,11 @@ def build_report(
             ws[f"{base_col}{row}"] = display_raw(base_value)
         ws[f"{target_col}{row}"] = display_raw(target_value)
         if base_available:
-            result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
-            color_target_cell(ws[f"{target_col}{row}"], result)
+            if english_name.startswith("driving_uninterfered_accel_"):
+                result, number_diff, bad_diff, compare_reason = compare_measurement(base_value, target_value)
+            else:
+                result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
+                color_target_cell(ws[f"{target_col}{row}"], result)
         else:
             result, number_diff, bad_diff = "仅target", None, None
             compare_reason = "base为空，仅展示target结果"

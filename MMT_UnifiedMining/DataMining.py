@@ -491,6 +491,8 @@ def load_metric_modules(pipeline: PipelineConfig) -> list[MetricModule]:
     func_dir = pipeline.func_folder_path
     if not func_dir.exists():
         raise FileNotFoundError(f"Pipeline {pipeline.name}: metric folder not found: {func_dir}")
+    if str(func_dir) not in sys.path:
+        sys.path.insert(0, str(func_dir))
 
     metric_modules: list[MetricModule] = []
     failed_files: list[tuple[Path, str]] = []
@@ -2050,7 +2052,18 @@ def save_metric_result(
     output_path = pipeline.output_dir / f"{metric.output_prefix}_{run_timestamp}.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fieldnames = ["指标来源", "文件夹路径", "检查结果", "符合要求的内容", "总Case", "Bad Case", "严重度得分", "段里程(km)"]
+    fieldnames = [
+        "指标来源",
+        "文件夹路径",
+        "检查结果",
+        "符合要求的内容",
+        "总Case",
+        "Bad Case",
+        "严重度得分",
+        "段里程(km)",
+        "Metric Value Sum",
+        "Metric Value Count",
+    ]
     need_header = not output_path.exists() or output_path.stat().st_size == 0
     row = {
         "指标来源": pipeline.name,
@@ -2063,6 +2076,8 @@ def save_metric_result(
         "Bad Case": _safe_int(statistics.get("Bad Case", 0)),
         "严重度得分": _safe_float(statistics.get("Severity Score", 0.0)),
         "段里程(km)": round(_safe_float(mileage_km), 6),
+        "Metric Value Sum": _safe_float(statistics.get("Metric Value Sum", 0.0)),
+        "Metric Value Count": _safe_int(statistics.get("Metric Value Count", 0)),
     }
 
     if replace_existing and output_path.exists():
@@ -2217,6 +2232,8 @@ def generate_unified_report(
         total_case_sum = case_sums["total_case_sum"]
         bad_case_sum = case_sums["bad_case_sum"]
         total_mileage_km = case_sums["total_mileage_km"]
+        metric_value_sum = case_sums["metric_value_sum"]
+        metric_value_count = case_sums["metric_value_count"]
 
         bad_case_folders_cache[prefix] = case_sums["bad_case_folders"]
         bad_case_severity_score_cache[prefix] = case_sums["severity_score_folders"]
@@ -2230,6 +2247,8 @@ def generate_unified_report(
                 "总里程(km)": round(total_mileage_km, 6),
                 "总次数": total_case_sum,
                 "触发次数": bad_case_sum,
+                "Metric Value Sum": metric_value_sum,
+                "Metric Value Count": metric_value_count,
                 "output_prefix": prefix,
             }
         )
@@ -2281,7 +2300,13 @@ def generate_unified_report(
                 mpi_value = round(total_mileage_km / trigger_count, 1)
                 mpi_text = f"{mpi_value}({round(total_mileage_km, 3)}/{trigger_count})"
         else:
-            if trigger_count == 0:
+            is_measurement_metric = str(row_data["指标名称"]).startswith("driving_uninterfered_accel_")
+            if is_measurement_metric and row_data["Metric Value Count"] > 0:
+                cpi_value = row_data["Metric Value Sum"] / row_data["Metric Value Count"]
+                cpi_text = f"{cpi_value:.3f} (n={row_data['Metric Value Count']})"
+            elif is_measurement_metric:
+                cpi_text = "N/A"
+            elif trigger_count == 0:
                 cpi_text = f">{total_case}({total_case}/0)"
             else:
                 cpi_value = round(total_case / trigger_count, 3)
@@ -2295,10 +2320,12 @@ def generate_unified_report(
         )
         cpi_cell = ws_main.cell(row=row_idx, column=8, value=cpi_text)
         cpi_cell.alignment = header_alignment
-        cpi_cell.comment = Comment(
-            text="CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径",
-            author="统一统计脚本",
+        cpi_comment = (
+            "CPI = 有效加速事件测量值的样本均值，n 为有效事件数"
+            if str(row_data["指标名称"]).startswith("driving_uninterfered_accel_")
+            else "CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径"
         )
+        cpi_cell.comment = Comment(text=cpi_comment, author="统一统计脚本")
 
     for col in ws_main.columns:
         max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
@@ -2634,6 +2661,8 @@ def calculate_case_sums(csv_data: list[dict[str, str]]) -> dict[str, Any]:
     total_case_sum = 0
     bad_case_sum = 0
     total_mileage_km = 0.0
+    metric_value_sum = 0.0
+    metric_value_count = 0
     bad_case_items: list[tuple[float, str, str]] = []
 
     for row in csv_data:
@@ -2641,6 +2670,8 @@ def calculate_case_sums(csv_data: list[dict[str, str]]) -> dict[str, Any]:
         bad_case_value = _safe_int(row.get("Bad Case", "0"))
         bad_case_sum += bad_case_value
         total_mileage_km += _safe_float(row.get("段里程(km)", "0"))
+        metric_value_sum += _safe_float(row.get("Metric Value Sum", "0"))
+        metric_value_count += _safe_int(row.get("Metric Value Count", "0"))
         if bad_case_value > 0:
             folder_path = row.get("文件夹路径", "")
             severity_score = _safe_float(row.get("严重度得分", "0"))
@@ -2652,6 +2683,8 @@ def calculate_case_sums(csv_data: list[dict[str, str]]) -> dict[str, Any]:
         "total_case_sum": total_case_sum,
         "bad_case_sum": bad_case_sum,
         "total_mileage_km": total_mileage_km,
+        "metric_value_sum": metric_value_sum,
+        "metric_value_count": metric_value_count,
         "bad_case_folders": [item[1] for item in bad_case_items],
         "severity_score_folders": [item[0] for item in bad_case_items],
         "detail_content_folders": [item[2] for item in bad_case_items],

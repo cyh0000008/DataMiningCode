@@ -499,7 +499,9 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
             # 匹配红绿灯信息 红绿灯状态，停止线距离
             frame_data["TrafficLight"] = {
                 "f_RedLightOn": False,
-                "stop_distance": 1000.0
+                "stop_distance": 1000.0,
+                "has_redlight_state": False,
+                "has_stop_distance": False
             }
             # 匹配traffic_light_decider_info下的stop_flag
             stop_flag_match = re.search(
@@ -519,8 +521,10 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
                 # 将字符串形式的布尔值转换为实际布尔值
                 if stop_flag_value == "true":
                     frame_data["TrafficLight"]["f_RedLightOn"] = True
+                    frame_data["TrafficLight"]["has_redlight_state"] = True
                 elif stop_flag_value == "false":
                     frame_data["TrafficLight"]["f_RedLightOn"] = False
+                    frame_data["TrafficLight"]["has_redlight_state"] = True
                 else:
                     print("stop_flag值格式异常，非true/false")
             else:
@@ -530,6 +534,7 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
                 try:
                     stop_distance_value = float(stop_distance_match.group(1).strip())
                     frame_data["TrafficLight"]["stop_distance"] = stop_distance_value
+                    frame_data["TrafficLight"]["has_stop_distance"] = True
                 except ValueError:
                     print("stop_distance值无法转换为浮点数")
             else:
@@ -559,7 +564,9 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
             frame_data["curvature_info"] = {
                 "max_curvature":0.0,
                 "curv_velocity_limit":100.0,
-                "is_curv_v_limit_enable":False
+                "is_curv_v_limit_enable":False,
+                "has_curvature_limit_state":False,
+                "has_curv_velocity_limit":False
             }
             # 匹配curvature_info下的max_curvature
             max_curvature_match = re.search(
@@ -592,6 +599,7 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
                 try:
                     curv_velocity_limit_value = float(curv_velocity_limit_match.group(1).strip())
                     frame_data["curvature_info"]["curv_velocity_limit"] = curv_velocity_limit_value
+                    frame_data["curvature_info"]["has_curv_velocity_limit"] = True
                 except ValueError:
                     print("curv_velocity_limit值无法转换为浮点数")
             else:
@@ -600,8 +608,10 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
                 is_curv_v_limit_enable_value = is_curv_v_limit_enable_match.group(1).strip().lower()
                 if is_curv_v_limit_enable_value == "true":
                     frame_data["curvature_info"]["is_curv_v_limit_enable"] = True
+                    frame_data["curvature_info"]["has_curvature_limit_state"] = True
                 elif is_curv_v_limit_enable_value == "false":
                     frame_data["curvature_info"]["is_curv_v_limit_enable"] = False
+                    frame_data["curvature_info"]["has_curvature_limit_state"] = True
                 else:
                     print("is_curv_v_limit_enable值格式异常，非true/false")
                     frame_data["curvature_info"]["is_curv_v_limit_enable"] = is_curv_v_limit_enable_value
@@ -719,6 +729,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                 # 修正：返回字典格式
                 parsed.append({
                     "timestamp_ms": timestamp_ms,
+                    "has_valid_fusion_data": False,
                     "min_ttc": None,
                     "f_potential_cipv_by_pos": False,
                     "f_potential_cipv_in_trafficlight": False,
@@ -791,6 +802,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             # 修正：返回字典格式，而非元组
             parsed.append({
                 "timestamp_ms": timestamp_ms,
+                "has_valid_fusion_data": True,
                 "min_ttc": min_ttc,
                 "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
                 "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
