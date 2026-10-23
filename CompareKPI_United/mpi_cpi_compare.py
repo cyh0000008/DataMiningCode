@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -140,6 +141,11 @@ for measure_key, measure_label in DRIVING_ACCEL_MEASURES:
 REPORT_PROFILE_J6B = "J6B"
 REPORT_PROFILE_MMT = "MMT"
 REPORT_PROFILES = (REPORT_PROFILE_J6B, REPORT_PROFILE_MMT)
+
+POWERTRAIN_PHEV_BEV = "PHEV/BEV"
+POWERTRAIN_ICE = "ICE"
+POWERTRAIN_TYPES = (POWERTRAIN_PHEV_BEV, POWERTRAIN_ICE)
+DEFAULT_POWERTRAIN_TYPE = POWERTRAIN_PHEV_BEV
 
 # J6B 保留当前 J6B 配置需要的指标；MMT 使用完整模板。
 J6B_METRIC_NAMES = frozenset(
@@ -268,6 +274,13 @@ PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {
     REPORT_PROFILE_J6B: J6B_METRIC_STANDARDS,
 }
 
+# Powertrain-specific overrides are intentionally empty for now: both powertrain
+# types use the current profile standards until their criteria are defined.
+POWERTRAIN_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
+    POWERTRAIN_PHEV_BEV: {},
+    POWERTRAIN_ICE: {},
+}
+
 
 def resolve_signal_mapping(cn_name: str, report_profile: str) -> tuple[str, str, str] | None:
     normalized_name = normalize(cn_name)
@@ -275,12 +288,35 @@ def resolve_signal_mapping(cn_name: str, report_profile: str) -> tuple[str, str,
     return profile_overrides.get(normalized_name) or SIGNAL_MAP.get(normalized_name)
 
 
-def resolve_metric_standard(cn_name: str, report_profile: str) -> str | None:
+def normalize_powertrain_type(value: str) -> str:
+    key = normalize(value).upper().replace(" ", "")
+    if key in {"PHEV/BEV", "PHEV", "BEV"}:
+        return POWERTRAIN_PHEV_BEV
+    if key == POWERTRAIN_ICE:
+        return POWERTRAIN_ICE
+    raise ValueError(f"未知动力形式：{value}，可选：PHEV/BEV 或 ICE")
+
+
+def resolve_metric_standard(
+    cn_name: str,
+    report_profile: str,
+    powertrain_type: str = DEFAULT_POWERTRAIN_TYPE,
+) -> str | None:
     normalized_name = normalize(cn_name)
+    normalized_powertrain = normalize_powertrain_type(powertrain_type)
+    powertrain_standard = POWERTRAIN_METRIC_STANDARD_OVERRIDES[normalized_powertrain].get(
+        report_profile, {}
+    ).get(normalized_name)
+    if powertrain_standard is not None:
+        return powertrain_standard
     profile_standard = PROFILE_METRIC_STANDARD_OVERRIDES.get(report_profile, {}).get(normalized_name)
     if profile_standard is not None:
-        return profile_standard
-    return METRIC_STANDARDS.get(normalized_name)
+        standard = profile_standard
+    else:
+        standard = METRIC_STANDARDS.get(normalized_name)
+    if standard is None:
+        return None
+    return f"{normalized_powertrain}：{standard}"
 
 
 @dataclass(frozen=True)
@@ -1325,7 +1361,11 @@ def hide_unmapped_template_rows(
     return hidden_rows
 
 
-def apply_metric_standards(ws, report_profile: str) -> None:
+def apply_metric_standards(
+    ws,
+    report_profile: str,
+    powertrain_type: str = DEFAULT_POWERTRAIN_TYPE,
+) -> None:
     for merged_range in list(ws.merged_cells.ranges):
         if merged_range.min_col <= 4 <= merged_range.max_col and merged_range.max_row >= 6:
             anchor = ws.cell(merged_range.min_row, merged_range.min_col)
@@ -1335,9 +1375,26 @@ def apply_metric_standards(ws, report_profile: str) -> None:
                     copy_cell_style(anchor, ws.cell(row, col))
 
     for row in range(6, ws.max_row + 1):
-        standard = resolve_metric_standard(ws.cell(row, 2).value, report_profile)
-        if standard is not None:
-            ws.cell(row, 4).value = standard
+        standard = resolve_metric_standard(
+            ws.cell(row, 2).value, report_profile, powertrain_type
+        )
+        if standard is None:
+            template_standard = ws.cell(row, 4).value
+            if not isinstance(template_standard, str) or not template_standard.strip():
+                continue
+            selected_prefix = f"{normalize_powertrain_type(powertrain_type)}："
+            labeled_standards = {
+                line.split("：", 1)[0]: line.split("：", 1)[1]
+                for line in template_standard.splitlines()
+                if "：" in line and line.split("：", 1)[0] in POWERTRAIN_TYPES
+            }
+            criterion = labeled_standards.get(
+                normalize_powertrain_type(powertrain_type)
+            )
+            if criterion is None:
+                criterion = next(iter(labeled_standards.values()), template_standard)
+            standard = selected_prefix + criterion
+        ws.cell(row, 4).value = standard
 
 
 def write_mapping_sheet(wb, rows: list[list[Any]]) -> None:
@@ -1437,6 +1494,31 @@ def choose_report_profile(value: str | None) -> str:
     return REPORT_PROFILE_MMT
 
 
+def choose_powertrain_type(value: str | None) -> str:
+    if value:
+        return normalize_powertrain_type(value)
+
+    if sys.stdin.isatty():
+        while True:
+            choice = input("请选择动力形式：1) PHEV/BEV  2) ICE（默认 1）：").strip()
+            if not choice:
+                return DEFAULT_POWERTRAIN_TYPE
+            if choice == "1":
+                return POWERTRAIN_PHEV_BEV
+            if choice == "2":
+                return POWERTRAIN_ICE
+            try:
+                return normalize_powertrain_type(choice)
+            except ValueError as exc:
+                print(exc)
+
+    print(
+        "未检测到交互输入，默认使用 PHEV/BEV；"
+        "如需 ICE，请加 --powertrain-type ICE。"
+    )
+    return DEFAULT_POWERTRAIN_TYPE
+
+
 def metric_filter_for_profile(report_profile: str) -> set[str] | None:
     if report_profile == REPORT_PROFILE_J6B:
         return {normalize(name) for name in J6B_METRIC_NAMES}
@@ -1454,6 +1536,7 @@ def make_default_output_path(
     base_info: ResultFile,
     target_info: ResultFile,
     mining_report_time: datetime,
+    powertrain_type: str = DEFAULT_POWERTRAIN_TYPE,
 ) -> Path:
     # Comparison filenames contain the model only; headers retain the vehicle ID.
     vehicle = target_info.vehicle.strip()
@@ -1463,6 +1546,7 @@ def make_default_output_path(
     vehicle = re.sub(r"\s+", "-", vehicle)
     parts = [
         safe_filename_token(vehicle),
+        safe_filename_token(normalize_powertrain_type(powertrain_type)),
         safe_filename_token(base_info.version or "无基线"),
         safe_filename_token(target_info.version),
         mining_report_time.strftime("%Y-%m-%d-%H-%M"),
@@ -1522,7 +1606,9 @@ def build_report(
     target_version: str | None = None,
     base_source_date: str | None = None,
     target_source_date: str | None = None,
+    powertrain_type: str = DEFAULT_POWERTRAIN_TYPE,
 ) -> Path:
+    powertrain_type = normalize_powertrain_type(powertrain_type)
     base_input_path = base_path or default_side_input_path(root, "base", report_profile)
     target_input_path = target_path or default_side_input_path(root, "target", report_profile)
     base_reports = find_side_reports(root, "base", base_input_path, required=False)
@@ -1549,7 +1635,9 @@ def build_report(
         choose_header_info(target_reports), target_vehicle, target_date, target_version
     )
     if output is None:
-        output = make_default_output_path(root, base_info, target_info, mining_report_time)
+        output = make_default_output_path(
+            root, base_info, target_info, mining_report_time, powertrain_type
+        )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(template, output)
@@ -1563,7 +1651,7 @@ def build_report(
     hidden_rows = hide_unmapped_template_rows(
         ws, report_profile, metric_filter_for_profile(report_profile)
     )
-    apply_metric_standards(ws, report_profile)
+    apply_metric_standards(ws, report_profile, powertrain_type)
 
     datasets: dict[tuple[str, str], dict[str, dict[str, MetricValue]]] = {}
     for kind, info in base_reports.items():
@@ -1639,6 +1727,15 @@ def build_report(
         keep_sheets(wb, {SUMMARY_SHEET, MAPPING_SHEET})
     else:
         keep_sheets(wb, {SUMMARY_SHEET})
+    wb.properties.subject = f"动力形式：{powertrain_type}"
+    wb.properties.keywords = f"动力形式,{powertrain_type}"
+    ws["D5"].comment = Comment(
+        text=(
+            f"本报告选择的动力形式：{powertrain_type}。筛选标准列按该动力形式展示；"
+            "当前 PHEV/BEV 与 ICE 使用相同的筛选条件和阈值。"
+        ),
+        author="MPI/CPI 对比工具",
+    )
     apply_workbook_format(wb)
     wb.save(output)
     return output
@@ -1664,7 +1761,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         default=None,
-        help="输出文件名；默认写入 reports/MPI_CPI_汇总对比_<报告配置>_<target日期>.xlsx",
+        help="输出文件名；默认文件名包含车辆、动力形式、版本和报告时间",
     )
     parser.add_argument(
         "--report-profile",
@@ -1672,6 +1769,12 @@ def main() -> None:
         dest="report_profile",
         default=None,
         help="报告配置：J6B 或 MMT；不传时交互选择",
+    )
+    parser.add_argument(
+        "--powertrain-type",
+        choices=POWERTRAIN_TYPES,
+        default=None,
+        help="动力形式：PHEV/BEV 或 ICE；不传时交互选择",
     )
     parser.add_argument("--details-sheet", action="store_true", help="保留“信号对照表”明细 sheet")
     parser.add_argument("--base-vehicle", default=None, help="覆盖 base 表头车型")
@@ -1694,6 +1797,7 @@ def main() -> None:
 
     try:
         report_profile = choose_report_profile(args.report_profile)
+        powertrain_type = choose_powertrain_type(args.powertrain_type)
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -1714,6 +1818,7 @@ def main() -> None:
         target_path,
         args.details_sheet,
         report_profile,
+        powertrain_type=powertrain_type,
         base_vehicle=args.base_vehicle,
         target_vehicle=args.target_vehicle,
         base_date=args.base_date,
@@ -1724,6 +1829,7 @@ def main() -> None:
         target_source_date=args.target_source_date,
     )
     print(f"报告配置：{report_profile}")
+    print(f"动力形式：{powertrain_type}")
     print(f"已生成：{output}")
 
 

@@ -4,6 +4,7 @@
     "E:/数据挖掘/DataMiningData/J6B_Data/ES27PV011/20260828-E2LB-2-ES27PV011_parsed"
   ],
   "date": "",
+  "powertrain_type": "ICE",
   "output_dir": "E:/数据挖掘/DataMiningResult/J6B/E2LB_ICE_0903",
   "report_name": "Longitudinal_CPI_Report",
   "enabled_metrics": [

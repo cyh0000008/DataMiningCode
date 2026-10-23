@@ -2,6 +2,7 @@
   "source_path": "/mnt/nas/L2pp_MBOX/PL061026",
   "query_date": "20260722-20260723",
   "query_software": "",
+  "powertrain_type": "PHEV/BEV",
   "max_depth": 4,
   "suffix": "_done",
   "output_dir": "/home/patac_data/DataMining_Longitudinal/DataMiningResult/MMT_Result/C1UL_0813_before",

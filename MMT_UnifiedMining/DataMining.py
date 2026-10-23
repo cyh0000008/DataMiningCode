@@ -103,6 +103,7 @@ class PipelineConfig:
     enabled: bool
     func_folder_path: Path
     output_dir: Path
+    powertrain_type: str
     file_pattern: str = "*.h5"
     preprocess_signals: list[str] = field(default_factory=list)
     default_metric_category: str = METRIC_CATEGORY_CPI
@@ -301,6 +302,10 @@ def load_config(config_file_path: str | Path) -> UnifiedConfig:
         if key not in raw:
             raise ValueError(f"Missing config key: {key}")
 
+    powertrain_type = str(raw.get("powertrain_type", "")).strip().upper()
+    if powertrain_type not in {"PHEV/BEV", "ICE"}:
+        raise ValueError("powertrain_type must be either 'PHEV/BEV' or 'ICE'")
+
     query_date = str(raw.get("query_date", "")).strip()
     if query_date:
         date_pattern = r"^\d{8}-\d{8}$"
@@ -316,6 +321,7 @@ def load_config(config_file_path: str | Path) -> UnifiedConfig:
         raise ValueError("max_depth must be >= 0")
 
     output_dir = resolve_path(raw["output_dir"], base_dir)
+    raw["powertrain_type"] = powertrain_type
     pipeline_configs = parse_pipeline_configs(raw["pipelines"], raw, base_dir, output_dir)
     enabled_pipelines = [pipeline for pipeline in pipeline_configs if pipeline.enabled]
     if not enabled_pipelines:
@@ -379,6 +385,7 @@ def parse_pipeline_configs(
                 enabled=bool(item.get("enabled", True)),
                 func_folder_path=resolve_path(item["func_folder_path"], base_dir),
                 output_dir=pipeline_output_dir,
+                powertrain_type=str(root_config["powertrain_type"]),
                 file_pattern=str(item.get("file_pattern", root_config.get("file_pattern", "*.h5"))),
                 preprocess_signals=list(item.get("preprocess_signals", [])),
                 default_metric_category=str(item.get("default_metric_category", default_category)).upper(),
@@ -994,6 +1001,7 @@ def run_all(
     if bad_case_config_path is None:
         bad_case_config_path = Path(__file__).resolve().parent / "bad_case_extract.json"
     bad_case_extract_config = load_bad_case_extract_config(bad_case_config_path)
+    print(f"当前动力形式: {config.pipelines[0].powertrain_type}")
 
     metrics_by_pipeline: dict[str, list[MetricModule]] = {}
     metric_category_map: dict[str, str] = {}
@@ -1202,6 +1210,7 @@ def process_can_folder(
             cross_done_max_gap_seconds=pipeline.cross_done_max_gap_seconds,
             cross_done_context_seconds=pipeline.cross_done_context_seconds,
         )
+        folder_context["powertrain_type"] = pipeline.powertrain_type
     except Exception as exc:
         print(f"[{pipeline.name}] 构建 CAN 会话失败：{exc}")
         for metric in pending_metrics:
@@ -1755,7 +1764,10 @@ def process_topic_folder(
         return
 
     try:
-        curr_frames = load_topic_frames_cached(folder_path)
+        curr_frames = [
+            {**frame, "_powertrain_type": pipeline.powertrain_type}
+            for frame in load_topic_frames_cached(folder_path)
+        ]
     except Exception as exc:
         print(f"[{pipeline.name}] Topic 预处理失败：{exc}")
         for metric in pending_metrics:
@@ -1811,7 +1823,10 @@ def process_topic_folder(
             if not cross_done_frames_ready:
                 if next_folder_path:
                     try:
-                        next_frames = load_topic_frames_cached(next_folder_path)
+                        next_frames = [
+                            {**frame, "_powertrain_type": pipeline.powertrain_type}
+                            for frame in load_topic_frames_cached(next_folder_path)
+                        ]
                         cross_done_frames = build_two_done_frames(
                             curr_frames,
                             folder_path,

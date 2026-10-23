@@ -96,7 +96,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     return (check_result, ttc_values, case_statistics)
 
 def _check_ttc_valid(ttc: Optional[float]) -> bool:
-    C_ttc_lower_bound = 2.5
+    C_ttc_lower_bound = 4.5
 
     if ttc >= C_ttc_lower_bound:
         return True
@@ -104,7 +104,7 @@ def _check_ttc_valid(ttc: Optional[float]) -> bool:
         return False
 
 def _cal_severity_score(ttc: Optional[float]) -> float:
-    C_ttc_lower_bound = 2.5
+    C_ttc_lower_bound = 4.5
 
     if ttc >= C_ttc_lower_bound:
         return 0.0

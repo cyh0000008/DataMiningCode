@@ -47,7 +47,14 @@ def __run_haoran_data_run__(folder_context: dict[str, Any]) -> tuple[bool, list[
         result_lines.insert(0, f"【运算总耗时】: {time.time() - start_time:.4f} 秒")
         return False, result_lines, stats
 
-    result = analyze_acc_start_no_override_jerkiness(session)
+    powertrain_type = folder_context.get("powertrain_type")
+    if powertrain_type not in {"PHEV/BEV", "ICE"}:
+        raise ValueError(f"Invalid or missing powertrain_type in CAN folder context: {powertrain_type!r}")
+    start_window_seconds = 1.0 if powertrain_type == "PHEV/BEV" else 3.0
+    result = analyze_acc_start_no_override_jerkiness(
+        session,
+        start_window_seconds=start_window_seconds,
+    )
     all_case_count = int(result["all_case_count"])
     bad_case_count = int(result["bad_case_count"])
     severity_score = float(result["severity_score"])

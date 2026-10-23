@@ -96,16 +96,16 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
 def _check_min_stop_dis_valid(min_stop_dis: Optional[float], start_vel: Optional[float]) -> bool:
     """检查stop_dis是否在有效范围内"""
-    C_stop_dis_lower_bound = 0
-    C_stop_dis_upper_bound = 4
+    C_stop_dis_lower_bound = 1.5
+    C_stop_dis_upper_bound = 3.5
 
     if min_stop_dis is None or start_vel is None:
         return False
     return C_stop_dis_lower_bound <= min_stop_dis <= C_stop_dis_upper_bound
 
 def _cal_severity_score(min_stop_dis: Optional[float], start_vel: Optional[float]) -> float:
-    C_stop_dis_lower_bound = 0
-    C_stop_dis_upper_bound = 4
+    C_stop_dis_lower_bound = 1.5
+    C_stop_dis_upper_bound = 3.5
 
     if min_stop_dis is None or start_vel is None:
         return 0.0

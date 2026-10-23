@@ -21,7 +21,8 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 ## 结构
 
 - `DataMining.py`：唯一主入口，负责加载配置、发现 H5、加载 filters、生成报告。
-- `config.json`：统一配置。`signals` 是标准字段名到 H5 显式路径的映射。
+- `config.json`：统一配置。`signals` 是标准字段名到 H5 显式路径的映射；
+  `powertrain_type` 必填，可设为 `PHEV/BEV` 或 `ICE`，用于选择动力形式对应的 CPI 阈值。
 - `signal_preprocessor.py`：统一信号预处理，读取 H5、按时间轴采样、生成衍生字段。
 - `metric_utils.py`：公共工具函数库，包含 Metric 数据结构、分段、采样后计算、jerk/TTC/严重度等可复用工具；具体指标逻辑不放在这里。
 - `reporting.py`：CSV、JSON、XLSX 输出。
@@ -70,10 +71,12 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 
 ```json
 "input_path": "../Raw",
-"date": "20260702-20260703"
+"date": "20260702-20260703",
+"powertrain_type": "PHEV/BEV"
 ```
 
 - `input_path` 必须是文件夹路径。
+- `powertrain_type` 必须明确填写为 `PHEV/BEV` 或 `ICE`；本次运行选用的值也会记录在 `run_manifest.json`。
 - 程序会递归扫描该文件夹及其子文件夹中的所有 `.h5` / `.hdf5` 文件，因此可以直接填写车型上层目录，例如 `F:\数据挖掘\DataMiningData\J6B\_Data\ES27PV011`。
 - `date` 格式固定为 `YYYYMMDD-YYYYMMDD`，按闭区间过滤。程序优先读取 H5 最近一级带日期的父文件夹；父目录均无日期时，再读取 H5 文件名中的日期。
 - 文件夹名和文件名中的日期均支持 `YYYY-MM-DD` 或 `YYYYMMDD`，例如文件夹 `20260827-E2LB-2-ES27PV011_parsed`，或文件 `VC9_ver0520_2026-06-25_10_50_58_CAN_parsed.h5`。

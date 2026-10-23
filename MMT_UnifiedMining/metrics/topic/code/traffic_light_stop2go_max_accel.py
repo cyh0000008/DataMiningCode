@@ -9,6 +9,7 @@ current_dir = os.path.abspath(os.getcwd())
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 import longitudinal_preprocessor as lonprepro
+from powertrain_utils import get_powertrain_type
 
 
 def _is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
@@ -73,9 +74,8 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     chassis_paragraphs: List[Dict] = []
     for comp_para in comprehensive_frames:
         chassis_paragraphs.append(comp_para.get("matched_chassis", {}))
-    time_info_list: List[str] = []  # 存储超1.5秒的时间信息
-    stop2go_duration_list: List[str] = []  # 新增：存储每个风险片段的红绿灯起步耗时
-    acceleration_max_list: List[str] = []  # 新增：存储每个风险片段的最大加速度
+    time_info_list: List[str] = []
+    acceleration_max_list: List[str] = []
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
 
@@ -85,17 +85,13 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
 
-    # 新增：定义阈值
-    MAX_ACCELERATION_THRESHOLD = 3.0  # 最大加速度阈值 3m/s²
-    MAX_DURATION_THRESHOLD = 2.5      # 最大起步时间阈值 2.5秒
+    MIN_ACCELERATION_THRESHOLD = 1.0
+    MAX_ACCELERATION_THRESHOLD = 2.3
+    get_powertrain_type(comprehensive_frames)
 
-    #计算每一个片段的红绿灯起步的耗时 + 最大加速度
-    C_velocity_threshold = 0.2  # 车速阈值：0.2m/s
-    stop2go_delaytime = 0.0  # 初始化为数值，避免后续字符串比较 【关键】
-    stop2go_maxaccel = 0.0
+    # 计算每一个片段的最大加速度
     for idx, segment in enumerate(risk_segments):
         if not segment:
-            stop2go_duration_list.append(f"片段{idx+1}：无有效数据")
             acceleration_max_list.append(f"片段{idx+1}：无有效数据")
             continue
         
@@ -106,27 +102,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         start_base_time_ms = lonprepro._get_unp_fusion_meta_time(first_unp_para)
         end_base_time_ms = lonprepro._get_unp_fusion_meta_time(last_unp_para)
         
-        # 4.2 查找起始时间后车速首次超过0.2m/s的时间戳（原有逻辑）
-        velocity_over_time_ms = _find_velocity_over_threshold(
-            chassis_paragraphs, 
-            start_base_time_ms, 
-            C_velocity_threshold
-        )   
-
-        # 4.3 计算耗时（原有逻辑）
-        if velocity_over_time_ms is not None:
-            duration_seconds = (velocity_over_time_ms - start_base_time_ms) / 1000
-            if duration_seconds < MAX_DURATION_THRESHOLD:
-                duration_str = f"片段{idx+1}：红绿灯起步耗时 {duration_seconds:.2f} 秒（从{start_base_time_ms:.0f}ms到{velocity_over_time_ms:.0f}ms，车速>{C_velocity_threshold}m/s）"
-                stop2go_delaytime = duration_seconds  # 修正：赋值为数值，而非字符串 【关键】
-            else:
-                duration_str = f"片段{idx+1}：耗时超过{MAX_DURATION_THRESHOLD}秒"
-                stop2go_delaytime = duration_seconds
-        else:
-            duration_str = f"片段{idx+1}：未找到车速>{C_velocity_threshold}m/s的时间点（起始时间：{start_base_time_ms:.0f}ms）"
-            stop2go_delaytime = 0.0
-        
-        # 4.4 新增：计算当前片段内的最大加速度
+        # 计算当前片段内的最大加速度
         max_acceleration, acc_data_count = _extract_acceleration_from_chassis(
             chassis_paragraphs, 
             start_base_time_ms, 
@@ -134,29 +110,25 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         )
 
         if max_acceleration is not None:
-            if max_acceleration < MAX_ACCELERATION_THRESHOLD:
+            if MIN_ACCELERATION_THRESHOLD <= max_acceleration <= MAX_ACCELERATION_THRESHOLD:
                 acc_str = f"片段{idx+1}：起步过程最大加速度 {max_acceleration:.3f} m/s²（时间范围：{start_base_time_ms:.0f}ms~{end_base_time_ms:.0f}ms）"
-                stop2go_maxaccel = max_acceleration
             else:
-                acc_str = f"片段{idx+1}：加速数据异常（最大加速度{max_acceleration:.3f}≥阈值{MAX_ACCELERATION_THRESHOLD}）"
-                stop2go_maxaccel = 0.0
+                acc_str = f"片段{idx+1}：最大加速度{max_acceleration:.3f}超出合格范围{MIN_ACCELERATION_THRESHOLD}~{MAX_ACCELERATION_THRESHOLD}m/s²"
+                case_statistics["Bad Case"] += 1
+                case_statistics["Severity Score"] = max(
+                    case_statistics["Severity Score"],
+                    _cal_severity_score(max_acceleration),
+                )
         else:
             acc_str = f"片段{idx+1}：未提取到有效加速度数据（有效数据{acc_data_count}条）"
-            stop2go_maxaccel = 0.0
-        if stop2go_maxaccel > 2.3 or stop2go_maxaccel < 1.0:
-            case_statistics["Bad Case"] += 1
-            case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop2go_maxaccel))
 
-        stop2go_duration_list.append(duration_str)
         acceleration_max_list.append(acc_str)
-        print(f"📈 {duration_str}")
         print(f"🚀 {acc_str}")
 
     if case_statistics["Bad Case"] > 0:
         check_result = True
 
 
-    time_info_list.extend(stop2go_duration_list)
     time_info_list.extend(acceleration_max_list)  # 新增：将加速度信息加入返回列表
 
     return (check_result, time_info_list, case_statistics)
@@ -208,32 +180,6 @@ def _extract_acceleration_from_chassis(
     max_acc = max(valid_accelerations)
     return max_acc, len(valid_accelerations)
 
-
-def _find_velocity_over_threshold(chassis_paragraphs: List[Dict], start_time: float, threshold: float) -> Optional[float]:
-    """
-    优化：查找start_time之后，车速连续N帧超过threshold的第一个时间戳（避免偶发波动）
-    :param chassis_paragraphs: chassis解析结果（已排序）
-    :param start_time: 起始时间（stop_flag切换时间）
-    :param threshold: 车速阈值（如0.2）
-    :return: 首次超过阈值的时间戳（None表示未找到）
-    """
-    # 过滤出start_time之后的chassis段落
-    post_switch_chassis = [p for p in chassis_paragraphs if p["timestamp_ms"] >= start_time]
-    if not post_switch_chassis:
-        return None
-
-    # 新增：连续2帧超过阈值才判定为有效（可调整帧数）
-    consecutive_count = 0
-    C_consecutive_frames = 2
-    for chassis_para in post_switch_chassis:
-        if chassis_para["vehicle_speed_average"] is not None and chassis_para["vehicle_speed_average"] > threshold:
-            consecutive_count += 1
-            if consecutive_count >= C_consecutive_frames:
-                return chassis_para["timestamp_ms"]
-        else:
-            consecutive_count = 0  # 重置连续计数
-
-    return None
 
 def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
     """

@@ -4,6 +4,7 @@ from typing import List
 
 from metric_utils import BaseMetric, MetricEvent, MetricResult, event_from_segment, find_scene_segments, measure_segment, result_from_events, severity_outside, within_bounds
 from signal_preprocessor import SignalFrame
+from powertrain_utils import value_for_powertrain
 
 
 class FollowStartLatencyMetric(BaseMetric):
@@ -13,7 +14,7 @@ class FollowStartLatencyMetric(BaseMetric):
     scene = "follow_start"
     measure = "start_latency"
     lower = None
-    upper = 2.5
+    upper = 3.0
     severity_base = 3.0
     bad_when_missing = True
 
@@ -29,7 +30,7 @@ class FollowStartLatencyMetric(BaseMetric):
                 continue
             measured += 1
             lower = self.lower
-            upper = self.upper
+            upper = value_for_powertrain(self.powertrain_type, 3.0, 3.5)
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)
             if self.measure == "curvature_min_speed":

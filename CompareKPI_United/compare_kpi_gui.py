@@ -17,6 +17,9 @@ from tkinter import ttk
 from mpi_cpi_compare import (
     DEFAULT_REPORT_DIR,
     DEFAULT_TEMPLATE_DIR,
+    DEFAULT_POWERTRAIN_TYPE,
+    POWERTRAIN_ICE,
+    POWERTRAIN_PHEV_BEV,
     REPORT_PROFILE_J6B,
     REPORT_PROFILE_MMT,
     build_report,
@@ -87,6 +90,7 @@ class CompareKpiApp:
         self.root.minsize(820, 620)
 
         self.profile = StringVar(value=REPORT_PROFILE_MMT)
+        self.powertrain_type = StringVar(value=DEFAULT_POWERTRAIN_TYPE)
         self.base_path = StringVar(value="")
         self.target_path = StringVar(value=str(app_dir() / "target" / REPORT_PROFILE_MMT))
         self.output_name = StringVar(value="")
@@ -126,17 +130,27 @@ class CompareKpiApp:
         profile_box.grid(row=0, column=1, sticky="w", padx=(8, 24))
         profile_box.bind("<<ComboboxSelected>>", lambda _event: self._profile_changed())
 
+        ttk.Label(config, text="动力形式").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        powertrain_box = ttk.Combobox(
+            config,
+            textvariable=self.powertrain_type,
+            values=(POWERTRAIN_PHEV_BEV, POWERTRAIN_ICE),
+            state="readonly",
+            width=12,
+        )
+        powertrain_box.grid(row=1, column=1, sticky="w", padx=(8, 24), pady=(10, 0))
+
         ttk.Label(config, text="固定输出路径").grid(row=0, column=2, sticky="w")
         ttk.Label(config, text=str(output_dir())).grid(row=0, column=3, columnspan=2, sticky="w", padx=(8, 0))
 
-        ttk.Label(config, text="输出文件名").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(config, text="输出文件名").grid(row=2, column=0, sticky="w", pady=(10, 0))
         ttk.Entry(config, textvariable=self.output_name).grid(
-            row=1, column=1, columnspan=3, sticky="ew", padx=(8, 8), pady=(10, 0)
+            row=2, column=1, columnspan=3, sticky="ew", padx=(8, 8), pady=(10, 0)
         )
-        ttk.Label(config, text="留空则自动命名").grid(row=1, column=4, sticky="w", pady=(10, 0))
+        ttk.Label(config, text="留空则自动命名").grid(row=2, column=4, sticky="w", pady=(10, 0))
 
         ttk.Checkbutton(config, text="生成信号对照表", variable=self.include_details).grid(
-            row=2, column=1, sticky="w", padx=(8, 0), pady=(10, 0)
+            row=3, column=1, sticky="w", padx=(8, 0), pady=(10, 0)
         )
 
         paths = ttk.LabelFrame(outer, text="选择报告", padding=12)
@@ -163,6 +177,7 @@ class CompareKpiApp:
         log_frame.columnconfigure(0, weight=1)
         self.log_text = self._make_log_widget(log_frame)
         self._log("base 可以留空；target 必须选择文件或文件夹。")
+        self._log("PHEV/BEV 与 ICE 当前使用相同的指标筛选标准。")
         self._log("输出固定写入：%s" % output_dir())
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: StringVar, optional: bool) -> None:
@@ -251,6 +266,7 @@ class CompareKpiApp:
             "target_path": target,
             "include_details": bool(self.include_details.get()),
             "report_profile": profile,
+            "powertrain_type": self.powertrain_type.get().strip(),
         }
 
     def _run_generate(self, options: dict[str, object]) -> None:

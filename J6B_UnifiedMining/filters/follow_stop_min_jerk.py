@@ -4,6 +4,7 @@ from typing import List
 
 from metric_utils import BaseMetric, MetricEvent, MetricResult, event_from_segment, find_scene_segments, measure_segment, result_from_events, severity_outside, within_bounds
 from signal_preprocessor import SignalFrame
+from powertrain_utils import value_for_powertrain
 
 
 class FollowStopMinJerkMetric(BaseMetric):
@@ -12,7 +13,7 @@ class FollowStopMinJerkMetric(BaseMetric):
     required_fields = ("time_s", "acceleration_total")
     scene = "follow_stop"
     measure = "min_jerk"
-    lower = -2.5
+    lower = -2.3
     upper = None
     severity_base = 1.0
     bad_when_missing = False
@@ -28,7 +29,7 @@ class FollowStopMinJerkMetric(BaseMetric):
                     events.append(event_from_segment(frame, seg, 100.0, "%s missing" % self.measure, extra))
                 continue
             measured += 1
-            lower = self.lower
+            lower = value_for_powertrain(self.powertrain_type, -2.3, -2.6)
             upper = self.upper
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)

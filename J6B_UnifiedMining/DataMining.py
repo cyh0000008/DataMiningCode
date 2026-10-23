@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from bad_case_report import write_bad_case_report
 from metric_utils import BaseMetric, metric_required_fields
+from powertrain_utils import normalize_powertrain_type
 from reporting import StreamingReportWriter
 from signal_preprocessor import (
     SignalFrame,
@@ -149,6 +150,9 @@ def load_config(config_path: Path) -> Dict[str, Any]:
         raise KeyError("config.json must contain a flat 'signals' mapping")
     if "input_path" not in config:
         raise KeyError("config.json must contain 'input_path'")
+    if "powertrain_type" not in config:
+        raise KeyError("config.json must contain 'powertrain_type' ('PHEV/BEV' or 'ICE')")
+    config["powertrain_type"] = normalize_powertrain_type(config["powertrain_type"])
     date_range = normalize_date_range(config.get("date", ""))
     if date_range:
         parse_date_range(date_range)
@@ -333,6 +337,9 @@ def load_metrics(
     if isinstance(enabled, list) and enabled and "all" not in enabled:
         enabled_set = set(str(item) for item in enabled)
     metric_signal_scope = normalize_metric_signal_scope(metric_signal_scope)
+    powertrain_type = normalize_powertrain_type(
+        config.get("powertrain_type", "PHEV/BEV") if config is not None else "PHEV/BEV"
+    )
 
     metrics: List[BaseMetric] = []
     for file_path in sorted(filter_dir.rglob("*.py")):
@@ -347,6 +354,7 @@ def load_metrics(
         metric = module.create_metric()
         if not isinstance(metric, BaseMetric):
             raise TypeError("create_metric() in %s did not return BaseMetric" % file_path)
+        metric.powertrain_type = powertrain_type
         if not metric_matches_signal_scope(metric, config, metric_signal_scope):
             continue
         metrics.append(metric)
@@ -432,6 +440,7 @@ def write_run_manifest(
         "config_path": str(config_path),
         "input_paths": [str(path) for path in input_paths],
         "date": date_range,
+        "powertrain_type": metrics[0].powertrain_type if metrics else None,
         "metric_signal_scope": metric_signal_scope,
         "h5_files": h5_files,
         "metrics": [{"name": metric.name, "category": metric.category} for metric in metrics],

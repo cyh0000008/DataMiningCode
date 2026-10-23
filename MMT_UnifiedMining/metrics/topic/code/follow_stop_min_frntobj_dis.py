@@ -66,6 +66,8 @@ def __run_haoran_data_run__(comprehensive_frames: List[Dict]) -> Tuple[bool, Lis
 def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Dict]:  # 修复7：改为Any，兼容字符串/字典
 
     check_result: bool = False
+    dis_lower_bound = 3.0
+    dis_upper_bound = 4.0
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
@@ -83,9 +85,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         (stop_lon_dis, curr_lat_dis, curr_vel, stop_dis_time) = _calc_segment_stop_frntdis(segment)
         if stop_lon_dis is not None:
-            if _check_stop_frntobj_dis_valid(stop_lon_dis) is not True:
+            if _check_stop_frntobj_dis_valid(stop_lon_dis, dis_lower_bound, dis_upper_bound) is not True:
                 case_statistics["Bad Case"] += 1
-                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop_lon_dis))
+                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop_lon_dis, dis_lower_bound, dis_upper_bound))
                 check_result = True
                 stop_frntobj_dis_values.append(f"[StopFrntObjDis Dangerous! time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
             else:
@@ -93,9 +95,11 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     return (check_result, stop_frntobj_dis_values, case_statistics)
 
-def _check_stop_frntobj_dis_valid(stop_frntobj_dis: Optional[float]) -> bool:
-    C_dis_upper_bound = 5
-    C_dis_lower_bound = 3.5
+def _check_stop_frntobj_dis_valid(
+    stop_frntobj_dis: Optional[float],
+    C_dis_lower_bound: float,
+    C_dis_upper_bound: float,
+) -> bool:
 
     ref_frntobj_dis = stop_frntobj_dis
 
@@ -104,9 +108,11 @@ def _check_stop_frntobj_dis_valid(stop_frntobj_dis: Optional[float]) -> bool:
     else:
         return False
     
-def _cal_severity_score(min_frntobj_dis: Optional[float]) -> float:
-    C_dis_upper_bound = 5
-    C_dis_lower_bound = 3.5
+def _cal_severity_score(
+    min_frntobj_dis: Optional[float],
+    C_dis_lower_bound: float,
+    C_dis_upper_bound: float,
+) -> float:
 
     ref_frntobj_dis = min_frntobj_dis
 

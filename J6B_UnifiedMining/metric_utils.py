@@ -68,6 +68,7 @@ class BaseMetric:
     category = "CPI"
     result_mode = "case_rate"
     required_fields: Sequence[str] = ()
+    powertrain_type = "PHEV/BEV"
 
     def run(self, frame: SignalFrame) -> MetricResult:
         start = time.time()

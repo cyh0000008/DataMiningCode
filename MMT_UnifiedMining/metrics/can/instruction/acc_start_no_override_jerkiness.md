@@ -2,7 +2,12 @@
 
 ## 1. 检查对象
 
-检查 ACC 刚开启后的 1 秒窗口。只看 ACC 成功进入 active、且这 1 秒内驾驶员没有 override 的场景。
+检查 ACC 刚开启后的窗口。窗口长度由 `config.json` 的 `powertrain_type` 决定：
+
+- `PHEV/BEV`：1 秒
+- `ICE`：3 秒
+
+只看 ACC 成功进入 active、且窗口内驾驶员没有 override 的场景。
 
 统计结果关注两件事：
 
@@ -31,9 +36,10 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 - 前一个采样点：`false`
 - 当前采样点：`true`
 
-以上升沿当前采样点作为窗口起点，向后取完整 1 秒：
+以上升沿当前采样点作为窗口起点，按动力形式向后取完整窗口：
 
-- `start_window_seconds = 1.0`
+- `PHEV/BEV`: `start_window_seconds = 1.0`
+- `ICE`: `start_window_seconds = 3.0`
 
 如果数据长度不够 1 秒，这次开启不计入统计。
 
@@ -44,7 +50,7 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 - `IACCAct376 == true`
 - `IAccPdlOvrrdAtv == false`
 
-也就是 ACC 开启后 1 秒内没有退出，也没有驾驶员 override。
+也就是 ACC 开启后整个窗口内没有退出，也没有驾驶员 override。
 
 当前口径不加车速条件。这样做是为了严格贴合“ACC 开启 1s 内且开启后无 override”这个需求，避免额外过滤导致漏看开启瞬间的问题。
 
@@ -60,7 +66,7 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 
 ## 6. 主要参数
 
-- `start_window_seconds = 1.0`
+- `start_window_seconds = 1.0`（PHEV/BEV）或 `3.0`（ICE）
 - `smoothing_window = 5`
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
@@ -104,11 +110,11 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 汇总字段：
 
 - `All Case Count`：有效 ACC 开启窗口数
-- `Bad Case`：1 秒内出现顿挫的窗口数
+- `Bad Case`：对应动力形式窗口内出现顿挫的窗口数
 - `Severity Score`：该文件夹内最严重顿挫事件的严重度
 
 ## 8. 边界说明
 
-- 只统计完整 1 秒窗口，数据尾部不足 1 秒的开启点不统计。
+- 只统计完整窗口，数据尾部不足对应动力形式窗口长度的开启点不统计。
 - 窗口内只要 ACC 退出或 override 变为 true，该窗口直接丢弃。
 - 顿挫口径跟 `acc_jerkiness` 保持一致，后续如果调整基础顿挫算法，这里也应同步确认。

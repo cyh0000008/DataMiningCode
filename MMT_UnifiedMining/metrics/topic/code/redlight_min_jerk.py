@@ -9,6 +9,7 @@ current_dir = os.path.abspath(os.getcwd())
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 import longitudinal_preprocessor as lonprepro
+from powertrain_utils import get_powertrain_type, value_for_powertrain
 
 
 def _is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
@@ -67,6 +68,8 @@ def __run_haoran_data_run__(comprehensive_frames: List[Dict]) -> Tuple[bool, Lis
 def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Dict]:  # 修复7：改为Any，兼容字符串/字典
 
     check_result: bool = False
+    powertrain_type = get_powertrain_type(comprehensive_frames)
+    jerk_lower_bound = value_for_powertrain(powertrain_type, -2.0, -2.3)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
@@ -84,9 +87,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         (min_jerk, min_jerk_time, start_vel) = _calc_segment_min_jerk(segment)
         if min_jerk is not None:
-            if not _check_min_jerk_valid(min_jerk,start_vel):  # 修改11：简化条件判断（not True → False）
+            if not _check_min_jerk_valid(min_jerk, start_vel, jerk_lower_bound):  # 修改11：简化条件判断（not True → False）
                 case_statistics["Bad Case"] += 1
-                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(min_jerk,start_vel))
+                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(min_jerk, start_vel, jerk_lower_bound))
                 check_result = True
                 min_jerk_values.append(f"[Dec Dangerous! time:{min_jerk_time} , jerk:{min_jerk:.6f}, start_vel: {start_vel:.6f}]")
             else:
@@ -94,16 +97,22 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     return (check_result, min_jerk_values, case_statistics)
 
-def _check_min_jerk_valid(min_jerk: Optional[float],start_vel: Optional[float]) -> bool:
-    C_jerk_lower_bound = -2
+def _check_min_jerk_valid(
+    min_jerk: Optional[float],
+    start_vel: Optional[float],
+    C_jerk_lower_bound: float,
+) -> bool:
 
     if min_jerk >= C_jerk_lower_bound:
         return True
     else:
         return False
     
-def _cal_severity_score(min_jerk: Optional[float],start_vel: Optional[float]) -> float:
-    C_jerk_lower_bound = -2
+def _cal_severity_score(
+    min_jerk: Optional[float],
+    start_vel: Optional[float],
+    C_jerk_lower_bound: float,
+) -> float:
 
     if min_jerk >= C_jerk_lower_bound:
         return 0.0

@@ -9,6 +9,7 @@ current_dir = os.path.abspath(os.getcwd())
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 import longitudinal_preprocessor as lonprepro
+from powertrain_utils import get_powertrain_type, value_for_powertrain
 
 
 def _is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
@@ -67,6 +68,8 @@ def __run_haoran_data_run__(comprehensive_frames: List[Dict]) -> Tuple[bool, Lis
 def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Dict]:  # 修复7：改为Any，兼容字符串/字典
 
     check_result: bool = False
+    powertrain_type = get_powertrain_type(comprehensive_frames)
+    latency_threshold = value_for_powertrain(powertrain_type, 2.5, 2.8)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
@@ -84,9 +87,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         result_values = _calc_segment_start_latency(segment)
         if result_values is not None:
-            if _check_start_latency_valid(result_values) is not True:
+            if _check_start_latency_valid(result_values, latency_threshold) is not True:
                 case_statistics["Bad Case"] += 1
-                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values))
+                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values, latency_threshold))
                 check_result = True
                 ttc_values.append(f"[Latency Dangerous! front_car_start_time_ms:{result_values['front_car_start_time_ms']} , ego_car_start_time_ms:{result_values['ego_car_start_time_ms']}, latency_sec:{result_values['latency_sec']:.2f} s, end_vel: {result_values['end_vel']:.6f}]")
             else:
@@ -96,16 +99,14 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     return (check_result, ttc_values, case_statistics)
 
-def _check_start_latency_valid(result_values: Optional[Dict]) -> bool:
-    C_latency_upper_bound = 2.5
+def _check_start_latency_valid(result_values: Optional[Dict], C_latency_upper_bound: float) -> bool:
 
     if result_values["latency_sec"] <= C_latency_upper_bound:
         return True
     else:
         return False
     
-def _cal_severity_score(result_values: Optional[Dict]) -> float:
-    C_latency_upper_bound = 2.5
+def _cal_severity_score(result_values: Optional[Dict], C_latency_upper_bound: float) -> float:
 
     if result_values["latency_sec"] <= C_latency_upper_bound:
         return 0.0

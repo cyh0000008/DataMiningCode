@@ -9,6 +9,7 @@ current_dir = os.path.abspath(os.getcwd())
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 import longitudinal_preprocessor as lonprepro
+from powertrain_utils import get_powertrain_type, value_for_powertrain
 
 
 def _is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
@@ -73,9 +74,8 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     chassis_paragraphs: List[Dict] = []
     for comp_para in comprehensive_frames:
         chassis_paragraphs.append(comp_para.get("matched_chassis", {}))
-    time_info_list: List[str] = []  # 存储超1.5秒的时间信息
-    stop2go_duration_list: List[str] = []  # 新增：存储每个风险片段的红绿灯起步耗时
-    acceleration_max_list: List[str] = []  # 新增：存储每个风险片段的最大加速度
+    time_info_list: List[str] = []
+    stop2go_duration_list: List[str] = []
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
 
@@ -85,25 +85,19 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
 
-    # 新增：定义阈值
-    MAX_ACCELERATION_THRESHOLD = 3.0  # 最大加速度阈值 3m/s²
-    MAX_DURATION_THRESHOLD = 2.5     # 最大起步时间阈值 2.5秒
+    powertrain_type = get_powertrain_type(comprehensive_frames)
+    MAX_DURATION_THRESHOLD = value_for_powertrain(powertrain_type, 1.5, 1.7)
 
-    #计算每一个片段的红绿灯起步的耗时 + 最大加速度
     C_velocity_threshold = 0.2  # 车速阈值：0.2m/s
-    stop2go_delaytime = 0.0  # 初始化为数值，避免后续字符串比较 【关键】
     for idx, segment in enumerate(risk_segments):
         if not segment:
             stop2go_duration_list.append(f"片段{idx+1}：无有效数据")
-            acceleration_max_list.append(f"片段{idx+1}：无有效数据")
             continue
         
         # 4.1 提取片段时间范围（起始+结束）
         first_unp_para = segment[0].get("unp_frame_data", {})
-        last_unp_para = segment[-1].get("unp_frame_data", {})
         # 修正：字典取值加兜底，避免KeyError 【关键】
         start_base_time_ms = lonprepro._get_unp_fusion_meta_time(first_unp_para)
-        end_base_time_ms = lonprepro._get_unp_fusion_meta_time(last_unp_para)
         
         # 4.2 查找起始时间后车速首次超过0.2m/s的时间戳（原有逻辑）
         velocity_over_time_ms = _find_velocity_over_threshold(
@@ -112,92 +106,39 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
             C_velocity_threshold
         )   
 
-        # 4.3 计算耗时（原有逻辑）
+        # 计算起步响应时延
         if velocity_over_time_ms is not None:
             duration_seconds = (velocity_over_time_ms - start_base_time_ms) / 1000
-            if duration_seconds < MAX_DURATION_THRESHOLD:
+            if duration_seconds <= MAX_DURATION_THRESHOLD:
                 duration_str = f"片段{idx+1}：红绿灯起步耗时 {duration_seconds:.2f} 秒（从{start_base_time_ms:.0f}ms到{velocity_over_time_ms:.0f}ms，车速>{C_velocity_threshold}m/s）"
-                stop2go_delaytime = duration_seconds  # 修正：赋值为数值，而非字符串 【关键】
             else:
                 duration_str = f"片段{idx+1}：耗时超过{MAX_DURATION_THRESHOLD}秒"
-                stop2go_delaytime = duration_seconds
         else:
             duration_str = f"片段{idx+1}：未找到车速>{C_velocity_threshold}m/s的时间点（起始时间：{start_base_time_ms:.0f}ms）"
-            stop2go_delaytime = 0.0
-        if stop2go_delaytime > 2.0:
+            duration_seconds = None
+
+        if duration_seconds is not None and duration_seconds > MAX_DURATION_THRESHOLD:
             case_statistics["Bad Case"] += 1
-            case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop2go_delaytime))
-        
-        # 4.4 新增：计算当前片段内的最大加速度
-        max_acceleration, acc_data_count = _extract_acceleration_from_chassis(
-            chassis_paragraphs, 
-            start_base_time_ms, 
-            end_base_time_ms  # 用片段结束时间限定加速度提取范围
-        )
-
-        if max_acceleration is not None:
-            if max_acceleration < MAX_ACCELERATION_THRESHOLD:
-                acc_str = f"片段{idx+1}：起步过程最大加速度 {max_acceleration:.3f} m/s²（时间范围：{start_base_time_ms:.0f}ms~{end_base_time_ms:.0f}ms）"
-            else:
-                acc_str = f"片段{idx+1}：加速数据异常（最大加速度{max_acceleration:.3f}≥阈值{MAX_ACCELERATION_THRESHOLD}，时间范围：{start_base_time_ms:.0f}ms~{end_base_time_ms:.0f}ms）"
-        else:
-            acc_str = f"片段{idx+1}：未提取到有效加速度数据（有效数据{acc_data_count}条）"
-        
+            case_statistics["Severity Score"] = max(
+                case_statistics["Severity Score"],
+                _cal_severity_score(duration_seconds, MAX_DURATION_THRESHOLD),
+            )
         stop2go_duration_list.append(duration_str)
-        acceleration_max_list.append(acc_str)
         print(f"📈 {duration_str}")
-        print(f"🚀 {acc_str}")
 
-    # 5. 结果整合（合并耗时+最大加速度信息）
     if case_statistics["Bad Case"] > 0:
         check_result = True
 
     time_info_list.extend(stop2go_duration_list)
-    time_info_list.extend(acceleration_max_list)  # 新增：将加速度信息加入返回列表
 
     return (check_result, time_info_list, case_statistics)
 
-def _cal_severity_score(accestop2go_delaytimel_time: Optional[float]) -> float:
-    C_min_acc = 2
-
-    C_cal_base = 3  #严重程度得分100分的越限基准
-    return abs((accestop2go_delaytimel_time - C_min_acc)/C_cal_base)*100.0
-
-# 新增：提取指定时间范围内的底盘加速度并计算最大值
-def _extract_acceleration_from_chassis(
-    chassis_paragraphs: List[Dict], 
-    start_time_ms: float, 
-    end_time_ms: float
-) -> Tuple[Optional[float], int]:
-    """
-    从chassis数据中提取指定时间范围内的加速度，返回最大值和有效数据条数
-    :param chassis_paragraphs: 解析后的底盘数据列表（含timestamp_ms和acceleration）
-    :param start_time_ms: 时间范围起始（ms）
-    :param end_time_ms: 时间范围结束（ms）
-    :return: (最大加速度值, 有效数据条数)，无有效数据则返回(None, 0)
-    """
-    # 过滤时间范围内的chassis数据
-    time_filtered_chassis = [
-        p for p in chassis_paragraphs 
-        if start_time_ms <= p["timestamp_ms"] <= end_time_ms
-    ]
-    if not time_filtered_chassis:
-        return None, 0
-    
-    # 提取有效加速度值（排除None/非数字）
-    valid_accelerations = []
-    for chassis_para in time_filtered_chassis:
-        # 适配chassis数据中加速度字段的常见命名（根据实际字段名调整）
-        acc_value = chassis_para.get("accleration_on_wheel")
-        if acc_value is not None and isinstance(acc_value, (int, float)):
-            valid_accelerations.append(acc_value)
-    
-    if not valid_accelerations:
-        return None, 0
-    
-    # 返回最大值和有效数据条数
-    max_acc = max(valid_accelerations)
-    return max_acc, len(valid_accelerations)
+def _cal_severity_score(
+    stop2go_delay_time: Optional[float],
+    max_duration_threshold: float,
+) -> float:
+    C_cal_base = 3
+    return max(0.0, (stop2go_delay_time - max_duration_threshold) / C_cal_base * 100.0)
 
 
 def _find_velocity_over_threshold(chassis_paragraphs: List[Dict], start_time: float, threshold: float) -> Optional[float]:

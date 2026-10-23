@@ -9,6 +9,7 @@ current_dir = os.path.abspath(os.getcwd())
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 import longitudinal_preprocessor as lonprepro
+from powertrain_utils import get_powertrain_type, value_for_powertrain
 
 
 def _is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
@@ -67,6 +68,8 @@ def __run_haoran_data_run__(comprehensive_frames: List[Dict]) -> Tuple[bool, Lis
 def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Dict]:  # 修复7：改为Any，兼容字符串/字典
 
     check_result: bool = False
+    powertrain_type = get_powertrain_type(comprehensive_frames)
+    max_time = value_for_powertrain(powertrain_type, 2.8, 3.2)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
@@ -85,9 +88,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         result_values = _calc_segment_start_time(segment)
         if result_values:
-            if _check_start_time_valid(result_values) is not True:
+            if _check_start_time_valid(result_values, max_time) is not True:
                 case_statistics["Bad Case"] += 1
-                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values))
+                case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values, max_time))
                 check_result = True
                 jerk_values.append(
                     f"[Stop2Go Start Time Dangerous! "
@@ -114,8 +117,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     return (check_result, jerk_values, case_statistics)
     
-def _check_start_time_valid(result_values: Optional[Dict]) -> bool:
-    C_max_time = 3.5
+def _check_start_time_valid(result_values: Optional[Dict], C_max_time: float) -> bool:
     C_min_time = 1.0
 
     start_time = result_values["reach_target_time"]
@@ -125,8 +127,7 @@ def _check_start_time_valid(result_values: Optional[Dict]) -> bool:
     else:
         return False
     
-def _cal_severity_score(result_values: Optional[Dict]) -> float:
-    C_max_time = 3.5
+def _cal_severity_score(result_values: Optional[Dict], C_max_time: float) -> float:
     C_min_time = 1.0
 
     start_time = result_values["reach_target_time"]

@@ -97,7 +97,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     return (check_result, jerk_values, case_statistics)
 
 def _check_max_jerk_valid(result_values: Optional[Dict]) -> bool:
-    C_jerk_upper_bound = 2.5
+    C_jerk_upper_bound = 1.5
     C_jerk_lower_bound = 1.0
 
     if result_values["max_jerk"] >= C_jerk_lower_bound and result_values["max_jerk"] <= C_jerk_upper_bound:
@@ -106,7 +106,7 @@ def _check_max_jerk_valid(result_values: Optional[Dict]) -> bool:
         return False
     
 def _cal_severity_score(result_values: Optional[Dict]) -> float:
-    C_jerk_upper_bound = 2.5
+    C_jerk_upper_bound = 1.5
     C_jerk_lower_bound = 1.0
 
     if result_values["max_jerk"] >= C_jerk_lower_bound and result_values["max_jerk"] <= C_jerk_upper_bound:

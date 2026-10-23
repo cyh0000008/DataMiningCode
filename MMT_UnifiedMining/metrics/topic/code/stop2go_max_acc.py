@@ -99,7 +99,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     
 def _check_max_accel_valid(result_values: Optional[Dict]) -> bool:
     C_min_accel = 1.0
-    C_max_accel = 3.0
+    C_max_accel = 2.7
 
     max_accel = result_values["max_acc_value"]
 
@@ -110,7 +110,7 @@ def _check_max_accel_valid(result_values: Optional[Dict]) -> bool:
     
 def _cal_severity_score(result_values: Optional[Dict]) -> float:
     C_min_accel = 1.0
-    C_max_accel = 3.0
+    C_max_accel = 2.7
 
     max_accel = result_values["max_acc_value"]
 
