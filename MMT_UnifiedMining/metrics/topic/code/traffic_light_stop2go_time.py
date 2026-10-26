@@ -86,7 +86,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     }
 
     powertrain_type = get_powertrain_type(comprehensive_frames)
-    MAX_DURATION_THRESHOLD = value_for_powertrain(powertrain_type, 1.5, 1.7)
+    MAX_DURATION_THRESHOLD = value_for_powertrain(powertrain_type, ice_value=1.7, phev_value=1.5, bev_value=1.5)
 
     C_velocity_threshold = 0.2  # 车速阈值：0.2m/s
     for idx, segment in enumerate(risk_segments):

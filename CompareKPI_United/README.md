@@ -74,7 +74,7 @@ cd D:\Data_Mining\CompareKPI_United
 python .\compare_kpi_gui.py
 ```
 
-界面里选择 `J6B` 或 `MMT`，并选择动力形式 `PHEV/BEV` 或 `ICE`，再选择 target 报告文件/文件夹；base 可以留空，留空时只展示 target 结果。两种动力形式目前使用相同的筛选标准，后续可分别配置。输出文件固定写到程序所在目录的 `reports/` 文件夹，输出文件名可以在界面里自定义，留空则自动命名；自动生成的文件名包含动力形式。
+界面里选择 `J6B` 或 `MMT`，并选择动力形式 `ICE`、`PHEV` 或 `BEV`，再选择 target 报告文件/文件夹；base 可以留空，留空时只展示 target 结果。筛选标准列优先使用模板中所选动力形式对应的标准。输出文件固定写到程序所在目录的 `reports/` 文件夹，输出文件名可以在界面里自定义，留空则自动命名；自动生成的文件名包含动力形式。
 
 打包 exe：
 
@@ -93,16 +93,25 @@ python .\mpi_cpi_compare.py --report-profile J6B
 python .\mpi_cpi_compare.py --report-profile MMT
 ```
 
-可通过 `--powertrain-type` 选择动力形式；不传入时会交互选择，非交互环境默认 `PHEV/BEV`。
-动力形式会用于解析该车型对应的筛选标准；对比报告的筛选标准列会给每项标准加上 `PHEV/BEV：`
-或 `ICE：` 标签，并记录在自动生成的文件名及 Excel 属性/筛选标准表头备注中。当前两种动力形式
-沿用相同的筛选条件和阈值，标签用于明确本次选择的动力形式，后续可分别配置标准：
+可通过 `--powertrain-type` 选择 `ICE`、`PHEV`、`BEV`；不传入时会交互选择，非交互环境默认 `PHEV`。
+动力形式会用于解析该车型对应的筛选标准；对比报告的筛选标准列只展示标准正文，
+不再为每项标准添加动力形式前缀。动力形式记录在报告表头、
+自动生成的文件名及 Excel 属性/筛选标准表头备注中。
+报告表头在“车型”和“日期”之间新增“动力形式”行，Base 和 Target 两侧均展示本次选择的动力形式；
+该行表示本次对比所选标准，不代表对历史 Base 数据重新挖掘。
+模板中已按动力形式分列的标准优先于脚本内的旧固定标准；若模板缺少所选类型的标准会报错，
+不会借用另一种动力形式的标准。未按动力形式分列的旧模板仍沿用代码中的兼容标准：
 
-静态模板会并列展示每项指标的 `PHEV/BEV` 与 `ICE` 两套标准；生成报告时则只保留所选动力形式对应的标准。
+静态模板会并列展示每项指标的 `ICE`、`PHEV`、`BEV` 三套独立标准；ICE 保留原 ICE 标准，
+PHEV 和 BEV 的初始值分别沿用原 PHEV/BEV 标准。生成报告时只保留所选类型的标准正文。
+“行车-无干扰加速”的三类指标均按事件判定并采用常规 CPI 展示及优劣比较：
+最大加速度 `1.5–2.5 m/s²`（含边界）、平均加速度 `>1.5 m/s²`、加速建立时间 `<3.5 s`。
+筛选标准列只描述统计关键量和标准值，详细场景条件见挖掘说明。历史均值报告需重新挖掘后再比较。
+旧的双类型模板仍兼容：其中 `PHEV/BEV` 条目作为 PHEV、BEV 的兼容来源，独立条目优先。
 
 ```powershell
 python .\mpi_cpi_compare.py --report-profile MMT --powertrain-type ICE
-python .\mpi_cpi_compare.py --report-profile J6B --powertrain-type PHEV/BEV
+python .\mpi_cpi_compare.py --report-profile J6B --powertrain-type PHEV
 ```
 
 也可以不复制报告，直接指定 base/target 路径：

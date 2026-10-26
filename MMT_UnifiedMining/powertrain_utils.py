@@ -1,7 +1,19 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypeVar
+import warnings
 
 
-POWERTRAIN_TYPES = {"PHEV/BEV", "ICE"}
+POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV")
+T = TypeVar("T")
+
+
+def normalize_powertrain_type(value: object) -> str:
+    powertrain_type = str(value).strip().upper() if value is not None else ""
+    if powertrain_type == "PHEV/BEV":
+        warnings.warn("Legacy PHEV/BEV migrated to PHEV; select BEV explicitly for a BEV vehicle.", UserWarning)
+        powertrain_type = "PHEV"
+    if powertrain_type not in POWERTRAIN_TYPES:
+        raise ValueError(f"powertrain_type must be ICE, PHEV or BEV, got: {value!r}")
+    return powertrain_type
 
 
 def get_powertrain_type(frames: List[Dict[str, Any]]) -> str:
@@ -13,9 +25,11 @@ def get_powertrain_type(frames: List[Dict[str, Any]]) -> str:
     return powertrain_type
 
 
-def value_for_powertrain(powertrain_type: str, phev_bev_value: Any, ice_value: Any) -> Any:
-    if powertrain_type == "PHEV/BEV":
-        return phev_bev_value
+def value_for_powertrain(powertrain_type: str, *, ice_value: T, phev_value: T, bev_value: T) -> T:
+    if powertrain_type == "PHEV":
+        return phev_value
+    if powertrain_type == "BEV":
+        return bev_value
     if powertrain_type == "ICE":
         return ice_value
     raise ValueError(f"Unsupported powertrain_type: {powertrain_type!r}")

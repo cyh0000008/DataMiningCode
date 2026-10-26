@@ -151,7 +151,7 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     if "input_path" not in config:
         raise KeyError("config.json must contain 'input_path'")
     if "powertrain_type" not in config:
-        raise KeyError("config.json must contain 'powertrain_type' ('PHEV/BEV' or 'ICE')")
+        raise KeyError("config.json must contain 'powertrain_type' ('ICE', 'PHEV' or 'BEV')")
     config["powertrain_type"] = normalize_powertrain_type(config["powertrain_type"])
     date_range = normalize_date_range(config.get("date", ""))
     if date_range:
@@ -338,7 +338,7 @@ def load_metrics(
         enabled_set = set(str(item) for item in enabled)
     metric_signal_scope = normalize_metric_signal_scope(metric_signal_scope)
     powertrain_type = normalize_powertrain_type(
-        config.get("powertrain_type", "PHEV/BEV") if config is not None else "PHEV/BEV"
+        config.get("powertrain_type", "PHEV") if config is not None else "PHEV"
     )
 
     metrics: List[BaseMetric] = []

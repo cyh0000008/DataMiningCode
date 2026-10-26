@@ -48,9 +48,9 @@ def __run_haoran_data_run__(folder_context: dict[str, Any]) -> tuple[bool, list[
         return False, result_lines, stats
 
     powertrain_type = folder_context.get("powertrain_type")
-    if powertrain_type not in {"PHEV/BEV", "ICE"}:
+    if powertrain_type not in {"ICE", "PHEV", "BEV"}:
         raise ValueError(f"Invalid or missing powertrain_type in CAN folder context: {powertrain_type!r}")
-    start_window_seconds = 1.0 if powertrain_type == "PHEV/BEV" else 3.0
+    start_window_seconds = {"ICE": 3.0, "PHEV": 1.0, "BEV": 1.0}[powertrain_type]
     result = analyze_acc_start_no_override_jerkiness(
         session,
         start_window_seconds=start_window_seconds,

@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from powertrain_utils import normalize_powertrain_type
 
 PIPELINE_CAN = "can"
 PIPELINE_TOPIC = "topic"
@@ -302,9 +303,7 @@ def load_config(config_file_path: str | Path) -> UnifiedConfig:
         if key not in raw:
             raise ValueError(f"Missing config key: {key}")
 
-    powertrain_type = str(raw.get("powertrain_type", "")).strip().upper()
-    if powertrain_type not in {"PHEV/BEV", "ICE"}:
-        raise ValueError("powertrain_type must be either 'PHEV/BEV' or 'ICE'")
+    powertrain_type = normalize_powertrain_type(raw.get("powertrain_type"))
 
     query_date = str(raw.get("query_date", "")).strip()
     if query_date:
@@ -2315,13 +2314,7 @@ def generate_unified_report(
                 mpi_value = round(total_mileage_km / trigger_count, 1)
                 mpi_text = f"{mpi_value}({round(total_mileage_km, 3)}/{trigger_count})"
         else:
-            is_measurement_metric = str(row_data["指标名称"]).startswith("driving_uninterfered_accel_")
-            if is_measurement_metric and row_data["Metric Value Count"] > 0:
-                cpi_value = row_data["Metric Value Sum"] / row_data["Metric Value Count"]
-                cpi_text = f"{cpi_value:.3f} (n={row_data['Metric Value Count']})"
-            elif is_measurement_metric:
-                cpi_text = "N/A"
-            elif trigger_count == 0:
+            if trigger_count == 0:
                 cpi_text = f">{total_case}({total_case}/0)"
             else:
                 cpi_value = round(total_case / trigger_count, 3)
@@ -2335,11 +2328,7 @@ def generate_unified_report(
         )
         cpi_cell = ws_main.cell(row=row_idx, column=8, value=cpi_text)
         cpi_cell.alignment = header_alignment
-        cpi_comment = (
-            "CPI = 有效加速事件测量值的样本均值，n 为有效事件数"
-            if str(row_data["指标名称"]).startswith("driving_uninterfered_accel_")
-            else "CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径"
-        )
+        cpi_comment = "CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径"
         cpi_cell.comment = Comment(text=cpi_comment, author="统一统计脚本")
 
     for col in ws_main.columns:

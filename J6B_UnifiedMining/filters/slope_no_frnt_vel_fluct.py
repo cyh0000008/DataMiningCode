@@ -30,7 +30,7 @@ class SlopeNoFrntVelFluctMetric(BaseMetric):
                 continue
             measured += 1
             lower = self.lower
-            upper = value_for_powertrain(self.powertrain_type, 0.3, 0.6)
+            upper = value_for_powertrain(self.powertrain_type, ice_value=0.6, phev_value=0.3, bev_value=0.3)
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)
             if self.measure == "curvature_min_speed":

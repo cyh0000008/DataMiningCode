@@ -30,7 +30,7 @@ class FollowStartLatencyMetric(BaseMetric):
                 continue
             measured += 1
             lower = self.lower
-            upper = value_for_powertrain(self.powertrain_type, 3.0, 3.5)
+            upper = value_for_powertrain(self.powertrain_type, ice_value=3.5, phev_value=3.0, bev_value=3.0)
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)
             if self.measure == "curvature_min_speed":

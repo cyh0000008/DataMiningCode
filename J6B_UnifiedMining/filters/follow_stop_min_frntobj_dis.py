@@ -30,7 +30,8 @@ class FollowStopMinFrntobjDisMetric(BaseMetric):
                 continue
             measured += 1
             lower, upper = value_for_powertrain(
-                self.powertrain_type, (3.0, 4.0), (2.5, 4.5)
+                self.powertrain_type, ice_value=(2.5, 4.5),
+                phev_value=(3.0, 4.0), bev_value=(3.0, 4.0)
             )
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)

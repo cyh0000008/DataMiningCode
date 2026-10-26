@@ -22,7 +22,7 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 
 - `DataMining.py`：唯一主入口，负责加载配置、发现 H5、加载 filters、生成报告。
 - `config.json`：统一配置。`signals` 是标准字段名到 H5 显式路径的映射；
-  `powertrain_type` 必填，可设为 `PHEV/BEV` 或 `ICE`，用于选择动力形式对应的 CPI 阈值。
+  `powertrain_type` 必填，可设为 `ICE`、`PHEV` 或 `BEV`，用于选择动力形式对应的 CPI 阈值。
 - `signal_preprocessor.py`：统一信号预处理，读取 H5、按时间轴采样、生成衍生字段。
 - `metric_utils.py`：公共工具函数库，包含 Metric 数据结构、分段、采样后计算、jerk/TTC/严重度等可复用工具；具体指标逻辑不放在这里。
 - `reporting.py`：CSV、JSON、XLSX 输出。
@@ -50,7 +50,7 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 ### 行车-无干扰加速 CPI
 
 `driving_uninterfered_accel_*` 指标按初始车速分为 `0–30`、`30–60`、`60–90`、`90+ km/h`
-四档，每档分别输出最大加速度、加速建立时间和平均加速度的有效事件均值。入口条件连续满足
+四档，每档分别统计最大加速度、加速建立时间和平均加速度 CPI。入口条件连续满足
 0.5 秒后，以满足条件的第一帧为起点；ACC 必须激活且无 override、前车或 cut-in，SetSpeed
 至少高于当前车速 22 km/h，且曲率限速未介入或高于目标车速 2 km/h。事件期间任一条件失效、
 出现超过 0.2 秒采样间隔、30 秒内未增加 20 km/h，或平滑车速相对峰值下降超过 1 km/h
@@ -58,8 +58,13 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 加速度首次超过 0.2 m/s² 至该事件最大加速度的时间，平均加速度按固定 20 km/h 增速除以
 事件耗时计算。加速度使用原始纵向加速度，不做坡度补偿。
 
-该指标按测量值均值和有效样本数汇总，不使用 CPI Bad Case 比率，也暂不定义均值高低的优劣
-阈值。J6B 当前没有红灯/停止线信号映射，因此 J6B 版本未应用“无红灯且停止线距离大于 50 m
+最大加速度按每段事件判定：ICE、PHEV、BEV 的全部初始车速档均采用闭区间
+`1.5–2.5 m/s²`，低于下限或高于上限记为 Bad Case，严重度按越界量除以 `1 m/s²` 再乘 100。
+汇总采用其他 CPI 相同的总 Case / Bad Case 展示口径，不再显示最大加速度均值。
+平均加速度必须 `>1.5 m/s²`，加速建立时间必须 `<3.5 s`，等于对应边界也记为 Bad Case。
+三类指标均按事件独立判定并采用常规 CPI 展示；严重度按越界量除以对应单位基准 1 再乘 100，
+严格不等式边界上的 Bad Case 严重度为 0。以上标准适用于三种动力形式和全部初始车速档。
+J6B 当前没有红灯/停止线信号映射，因此 J6B 版本未应用“无红灯且停止线距离大于 50 m
 或无停止线”筛选；结果与应用了该筛选的 MMT 结果不完全同口径。cut-in 信号或其他必要信号
 缺失时指标跳过，不把缺失信号当作无干扰。
 
@@ -72,11 +77,13 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 ```json
 "input_path": "../Raw",
 "date": "20260702-20260703",
-"powertrain_type": "PHEV/BEV"
+"powertrain_type": "PHEV"
 ```
 
 - `input_path` 必须是文件夹路径。
-- `powertrain_type` 必须明确填写为 `PHEV/BEV` 或 `ICE`；本次运行选用的值也会记录在 `run_manifest.json`。
+- `powertrain_type` 必须明确填写为 `ICE`、`PHEV` 或 `BEV`；本次运行选用的值也会记录在 `run_manifest.json`。
+- 三类动力形式独立配置阈值：ICE 保留原 ICE 标准，PHEV、BEV 的初始值分别沿用原 PHEV/BEV 标准。
+  旧配置 `PHEV/BEV` 会提示警告并迁移为 `PHEV`，纯电车辆请明确改选 `BEV`。
 - 程序会递归扫描该文件夹及其子文件夹中的所有 `.h5` / `.hdf5` 文件，因此可以直接填写车型上层目录，例如 `F:\数据挖掘\DataMiningData\J6B\_Data\ES27PV011`。
 - `date` 格式固定为 `YYYYMMDD-YYYYMMDD`，按闭区间过滤。程序优先读取 H5 最近一级带日期的父文件夹；父目录均无日期时，再读取 H5 文件名中的日期。
 - 文件夹名和文件名中的日期均支持 `YYYY-MM-DD` 或 `YYYYMMDD`，例如文件夹 `20260827-E2LB-2-ES27PV011_parsed`，或文件 `VC9_ver0520_2026-06-25_10_50_58_CAN_parsed.h5`。

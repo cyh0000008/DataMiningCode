@@ -25,6 +25,7 @@ from .job_spec import (
     CompareJobSpec,
     J6BJobSpec,
     MMTJobSpec,
+    normalize_powertrain_type,
 )
 from .paths import AppSettings
 from .progress_parser import parse_line
@@ -117,6 +118,7 @@ class JobManager(QObject):
         pending_compare = self._build_pending_compare(
             JOB_KIND_J6B, title, spec.auto_compare, spec.compare_base_path,
             spec.compare_details_sheet, compare_python, compare_dir,
+            powertrain_type=spec.powertrain_type,
         )
         report_archive = self._build_report_archive(
             spec.raw_report_archive_dir,
@@ -154,6 +156,7 @@ class JobManager(QObject):
         pending_compare = self._build_pending_compare(
             JOB_KIND_MMT, title, auto_compare, spec.compare_base_path,
             spec.compare_details_sheet, compare_python, compare_dir,
+            powertrain_type=spec.powertrain_type,
         )
         report_archive = None if spec.dry_run else self._build_report_archive(
             spec.raw_report_archive_dir,
@@ -166,6 +169,7 @@ class JobManager(QObject):
         )
 
     def submit_compare(self, python_exe: str, compare_dir: Path, spec: CompareJobSpec) -> str:
+        powertrain_type = normalize_powertrain_type(spec.powertrain_type)
         title = spec.task_name.strip() or f"对比报告 {time.strftime('%H:%M:%S')}"
         command = [
             python_exe,
@@ -174,6 +178,8 @@ class JobManager(QObject):
             str(compare_dir),
             "--report-profile",
             spec.report_profile,
+            "--powertrain-type",
+            powertrain_type,
         ]
         optional_flag_map = {
             "--base": spec.base_path,
@@ -225,12 +231,14 @@ class JobManager(QObject):
         target_date: str = "",
         base_version: str = "",
         target_version: str = "",
+        powertrain_type: str = "PHEV",
     ) -> Optional[Dict[str, Any]]:
         if not auto_compare or compare_dir is None:
             return None
         compare_spec = CompareJobSpec(
             task_name=f"对比报告（自动）- {source_title}",
             report_profile=_COMPARE_PROFILE_BY_KIND.get(kind, "J6B"),
+            powertrain_type=normalize_powertrain_type(powertrain_type),
             base_path=compare_base_path,
             target_path="",  # 挖掘任务成功后从其输出中捕获报告路径再填入
             details_sheet=compare_details_sheet,

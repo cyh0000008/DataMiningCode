@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from .. import presets
 from ..job_manager import JobManager
-from ..job_spec import JOB_KIND_J6B, J6BJobSpec
+from ..job_spec import JOB_KIND_J6B, J6BJobSpec, POWERTRAIN_TYPES
 from ..paths import AppSettings
 
 
@@ -65,7 +65,7 @@ class J6BForm(QWidget):
         form.addRow("当前报告软件版本：", self.software_version_edit)
 
         self.powertrain_combo = QComboBox()
-        self.powertrain_combo.addItems(["PHEV/BEV", "ICE"])
+        self.powertrain_combo.addItems(POWERTRAIN_TYPES)
         self.powertrain_combo.setCurrentText("ICE")
         form.addRow("动力形式：", self.powertrain_combo)
 

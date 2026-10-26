@@ -32,6 +32,7 @@ import re
 import shutil
 import sys
 import unicodedata
+import warnings
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -142,10 +143,11 @@ REPORT_PROFILE_J6B = "J6B"
 REPORT_PROFILE_MMT = "MMT"
 REPORT_PROFILES = (REPORT_PROFILE_J6B, REPORT_PROFILE_MMT)
 
-POWERTRAIN_PHEV_BEV = "PHEV/BEV"
+POWERTRAIN_PHEV = "PHEV"
+POWERTRAIN_BEV = "BEV"
 POWERTRAIN_ICE = "ICE"
-POWERTRAIN_TYPES = (POWERTRAIN_PHEV_BEV, POWERTRAIN_ICE)
-DEFAULT_POWERTRAIN_TYPE = POWERTRAIN_PHEV_BEV
+POWERTRAIN_TYPES = (POWERTRAIN_ICE, POWERTRAIN_PHEV, POWERTRAIN_BEV)
+DEFAULT_POWERTRAIN_TYPE = POWERTRAIN_PHEV
 
 # J6B 保留当前 J6B 配置需要的指标；MMT 使用完整模板。
 J6B_METRIC_NAMES = frozenset(
@@ -242,6 +244,11 @@ for metric_name in DRIVING_ACCEL_METRIC_NAMES:
         "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
         "平滑车速未持续下降超过1km/h；报告事件均值。"
     )
+    if metric_name.startswith("最大加速度"):
+        key = metric_name.replace(" ", "")
+        METRIC_STANDARDS[key] = METRIC_STANDARDS[key].replace(
+            "报告事件均值。", "每段事件最大加速度合格区间：1.5~2.5m/s2（含边界）；越界计为Bad Case，按常规CPI汇总。"
+        )
 
 # J6B 专用标准只覆盖当前模板已有指标；不额外引入 J6B_UnifiedMining
 # filters 中存在但模板未放入的指标。
@@ -269,15 +276,31 @@ for metric_name in DRIVING_ACCEL_METRIC_NAMES:
         "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
         "平滑车速未持续下降超过1km/h；报告事件均值。J6B 暂无红灯/停止线信号映射，未应用该筛选。"
     )
+    if metric_name.startswith("最大加速度"):
+        key = metric_name.replace(" ", "")
+        J6B_METRIC_STANDARDS[key] = J6B_METRIC_STANDARDS[key].replace(
+            "报告事件均值。", "每段事件最大加速度合格区间：1.5~2.5m/s2（含边界）；越界计为Bad Case，按常规CPI汇总。"
+        )
+
+for measure_key, measure_label in DRIVING_ACCEL_MEASURES:
+    criterion = {
+        "max_acc": "事件最大加速度：1.5~2.5 m/s²（含边界）",
+        "avg_acc": "平均加速度（车速增量/事件耗时）：>1.5 m/s²",
+        "accel_build_time": "加速建立时间（加速度首次>0.2 m/s²至峰值）：<3.5 s",
+    }[measure_key]
+    for band_key, band_label in DRIVING_ACCEL_SPEED_BANDS:
+        key = f"{measure_label}（{band_label}）".replace(" ", "")
+        METRIC_STANDARDS[key] = criterion
+        J6B_METRIC_STANDARDS[key] = criterion
 
 PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {
     REPORT_PROFILE_J6B: J6B_METRIC_STANDARDS,
 }
 
-# Powertrain-specific overrides are intentionally empty for now: both powertrain
-# types use the current profile standards until their criteria are defined.
+# Labeled templates define independent standards for each powertrain.
 POWERTRAIN_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
-    POWERTRAIN_PHEV_BEV: {},
+    POWERTRAIN_PHEV: {},
+    POWERTRAIN_BEV: {},
     POWERTRAIN_ICE: {},
 }
 
@@ -290,11 +313,12 @@ def resolve_signal_mapping(cn_name: str, report_profile: str) -> tuple[str, str,
 
 def normalize_powertrain_type(value: str) -> str:
     key = normalize(value).upper().replace(" ", "")
-    if key in {"PHEV/BEV", "PHEV", "BEV"}:
-        return POWERTRAIN_PHEV_BEV
-    if key == POWERTRAIN_ICE:
-        return POWERTRAIN_ICE
-    raise ValueError(f"未知动力形式：{value}，可选：PHEV/BEV 或 ICE")
+    if key == "PHEV/BEV":
+        warnings.warn("旧动力形式 PHEV/BEV 已迁移为 PHEV；纯电车辆请重新选择 BEV。", UserWarning)
+        return POWERTRAIN_PHEV
+    if key in POWERTRAIN_TYPES:
+        return key
+    raise ValueError(f"未知动力形式：{value}，可选：ICE、PHEV 或 BEV")
 
 
 def resolve_metric_standard(
@@ -770,13 +794,14 @@ def parse_metric_parenthetical(value: Any) -> tuple[float | None, float | None]:
 
 
 def find_comparison_date_groups(ws) -> list[dict[str, Any]]:
+    header_offset = 1 if normalize(ws["A2"].value) == "动力形式" else 0
     groups: list[dict[str, Any]] = []
     for col in range(1, max(1, ws.max_column)):
-        mpi_label = normalize(ws.cell(4, col).value).upper()
-        cpi_label = normalize(ws.cell(4, col + 1).value).upper()
+        mpi_label = normalize(ws.cell(4 + header_offset, col).value).upper()
+        cpi_label = normalize(ws.cell(4 + header_offset, col + 1).value).upper()
         if (mpi_label, cpi_label) != ("MPI", "CPI"):
             continue
-        date_range = normalize_date_range_label(ws.cell(2, col).value)
+        date_range = normalize_date_range_label(ws.cell(2 + header_offset, col).value)
         if not date_range:
             continue
         start_date, end_date = split_date_range(date_range)
@@ -787,7 +812,7 @@ def find_comparison_date_groups(ws) -> list[dict[str, Any]]:
                 "date_range": f"{start_date}-{end_date}" if start_date and end_date else date_range,
                 "start_date": start_date,
                 "end_date": end_date,
-                "version": ws.cell(3, col).value or "",
+                "version": ws.cell(3 + header_offset, col).value or "",
             }
         )
     return groups
@@ -1344,6 +1369,39 @@ def write_top_headers(ws, base_info: ResultFile, target_info: ResultFile) -> Non
     ws["G3"] = target_info.version
 
 
+def insert_powertrain_header(ws, powertrain_type: str) -> None:
+    # Insert after metric processing so legacy template row coordinates stay valid.
+    merged_ranges = [copy(merged_range) for merged_range in ws.merged_cells.ranges]
+    for merged_range in merged_ranges:
+        ws.unmerge_cells(str(merged_range))
+    row_dimensions = {
+        row: copy(dimension)
+        for row, dimension in ws.row_dimensions.items()
+        if row >= 2
+    }
+    for row in row_dimensions:
+        del ws.row_dimensions[row]
+    ws.insert_rows(2)
+    for row, dimension in row_dimensions.items():
+        dimension.index = row + 1
+        ws.row_dimensions[row + 1] = dimension
+    for merged_range in merged_ranges:
+        if merged_range.min_row >= 2:
+            merged_range.shift(row_shift=1)
+        elif merged_range.max_row >= 2:
+            merged_range.max_row += 1
+        ws.merge_cells(str(merged_range))
+    for col in range(1, ws.max_column + 1):
+        copy_cell_style(ws.cell(1, col), ws.cell(2, col))
+    ws.merge_cells("A2:D2")
+    ws.merge_cells("E2:F2")
+    ws.merge_cells("G2:H2")
+    ws["A2"] = "动力形式"
+    ws["E2"] = powertrain_type
+    ws["G2"] = powertrain_type
+    ws.row_dimensions[2].height = ws.row_dimensions[1].height
+
+
 def hide_unmapped_template_rows(
     ws, report_profile: str, metric_filter: set[str] | None = None
 ) -> set[int]:
@@ -1375,26 +1433,37 @@ def apply_metric_standards(
                     copy_cell_style(anchor, ws.cell(row, col))
 
     for row in range(6, ws.max_row + 1):
-        standard = resolve_metric_standard(
-            ws.cell(row, 2).value, report_profile, powertrain_type
-        )
+        template_standard = ws.cell(row, 4).value
+        selected_powertrain = normalize_powertrain_type(powertrain_type)
+        labeled_standards = {}
+        if isinstance(template_standard, str):
+            labeled_standards = {
+                line.split("：", 1)[0].strip(): line.split("：", 1)[1]
+                for line in template_standard.splitlines()
+                if "：" in line and line.split("：", 1)[0].strip() in (*POWERTRAIN_TYPES, "PHEV/BEV")
+            }
+        if "PHEV/BEV" in labeled_standards:
+            legacy_standard = labeled_standards.pop("PHEV/BEV")
+            labeled_standards.setdefault("PHEV", legacy_standard)
+            labeled_standards.setdefault("BEV", legacy_standard)
+        if labeled_standards:
+            if selected_powertrain not in labeled_standards:
+                raise ValueError(
+                    f"模板第 {row} 行（{ws.cell(row, 2).value}）缺少 "
+                    f"{selected_powertrain} 筛选标准"
+                )
+            standard = f"{selected_powertrain}：{labeled_standards[selected_powertrain]}"
+        else:
+            standard = resolve_metric_standard(
+                ws.cell(row, 2).value, report_profile, selected_powertrain
+            )
         if standard is None:
-            template_standard = ws.cell(row, 4).value
             if not isinstance(template_standard, str) or not template_standard.strip():
                 continue
-            selected_prefix = f"{normalize_powertrain_type(powertrain_type)}："
-            labeled_standards = {
-                line.split("：", 1)[0]: line.split("：", 1)[1]
-                for line in template_standard.splitlines()
-                if "：" in line and line.split("：", 1)[0] in POWERTRAIN_TYPES
-            }
-            criterion = labeled_standards.get(
-                normalize_powertrain_type(powertrain_type)
-            )
-            if criterion is None:
-                criterion = next(iter(labeled_standards.values()), template_standard)
-            standard = selected_prefix + criterion
-        ws.cell(row, 4).value = standard
+            standard = f"{selected_powertrain}：{template_standard}"
+        ws.cell(row, 4).value = re.sub(
+            r"^(?:PHEV/BEV|PHEV|BEV|ICE)\s*[:：]\s*", "", standard
+        )
 
 
 def write_mapping_sheet(wb, rows: list[list[Any]]) -> None:
@@ -1500,21 +1569,23 @@ def choose_powertrain_type(value: str | None) -> str:
 
     if sys.stdin.isatty():
         while True:
-            choice = input("请选择动力形式：1) PHEV/BEV  2) ICE（默认 1）：").strip()
+            choice = input("请选择动力形式：1) ICE  2) PHEV  3) BEV（默认 2）：").strip()
             if not choice:
                 return DEFAULT_POWERTRAIN_TYPE
             if choice == "1":
-                return POWERTRAIN_PHEV_BEV
-            if choice == "2":
                 return POWERTRAIN_ICE
+            if choice == "2":
+                return POWERTRAIN_PHEV
+            if choice == "3":
+                return POWERTRAIN_BEV
             try:
                 return normalize_powertrain_type(choice)
             except ValueError as exc:
                 print(exc)
 
     print(
-        "未检测到交互输入，默认使用 PHEV/BEV；"
-        "如需 ICE，请加 --powertrain-type ICE。"
+        "未检测到交互输入，默认使用 PHEV；"
+        "如需其他动力形式，请加 --powertrain-type ICE 或 BEV。"
     )
     return DEFAULT_POWERTRAIN_TYPE
 
@@ -1687,8 +1758,11 @@ def build_report(
             ws[f"{base_col}{row}"] = display_raw(base_value)
         ws[f"{target_col}{row}"] = display_raw(target_value)
         if base_available:
-            if english_name.startswith("driving_uninterfered_accel_"):
-                result, number_diff, bad_diff, compare_reason = compare_measurement(base_value, target_value)
+            if english_name.startswith("driving_uninterfered_accel_") and any(
+                re.search(r"\bn\s*=", str(value.raw)) for value in (base_value, target_value)
+            ):
+                result, number_diff, bad_diff = "无法比较", None, None
+                compare_reason = "历史加速指标为测量均值，与当前阈值型CPI口径不同；需重新挖掘"
             else:
                 result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
                 color_target_cell(ws[f"{target_col}{row}"], result)
@@ -1699,7 +1773,7 @@ def build_report(
         mapping_rows.append(
             [
                 sequence,
-                row,
+                row + 1,
                 kind,
                 cn_name,
                 english_name,
@@ -1732,11 +1806,12 @@ def build_report(
     ws["D5"].comment = Comment(
         text=(
             f"本报告选择的动力形式：{powertrain_type}。筛选标准列按该动力形式展示；"
-            "当前 PHEV/BEV 与 ICE 使用相同的筛选条件和阈值。"
+            "模板按动力形式分列时使用所选类型的标准，不同动力形式的阈值可能不同。"
         ),
         author="MPI/CPI 对比工具",
     )
     apply_workbook_format(wb)
+    insert_powertrain_header(ws, powertrain_type)
     wb.save(output)
     return output
 
@@ -1774,7 +1849,7 @@ def main() -> None:
         "--powertrain-type",
         choices=POWERTRAIN_TYPES,
         default=None,
-        help="动力形式：PHEV/BEV 或 ICE；不传时交互选择",
+        help="动力形式：ICE、PHEV 或 BEV；不传时交互选择",
     )
     parser.add_argument("--details-sheet", action="store_true", help="保留“信号对照表”明细 sheet")
     parser.add_argument("--base-vehicle", default=None, help="覆盖 base 表头车型")

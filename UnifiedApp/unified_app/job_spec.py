@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List
+import warnings
 
 
 JOB_KIND_J6B = "j6b"
 JOB_KIND_MMT = "mmt"
 JOB_KIND_COMPARE = "compare"
+POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV")
+
+
+def normalize_powertrain_type(value: str) -> str:
+    value = value.strip().upper()
+    if value == "PHEV/BEV":
+        warnings.warn("旧动力形式 PHEV/BEV 已迁移为 PHEV；纯电车辆请重新选择 BEV。", UserWarning)
+        value = "PHEV"
+    if value not in POWERTRAIN_TYPES:
+        raise ValueError("动力形式必须为 ICE、PHEV 或 BEV")
+    return value
 
 JOB_KIND_LABELS = {
     JOB_KIND_J6B: "J6B 挖掘",
@@ -24,6 +36,7 @@ def _from_dict(cls, data: Dict[str, Any]):
         data.setdefault("software_version", data.get("compare_target_version", ""))
     defaults = cls()
     known = {f: data.get(f, getattr(defaults, f)) for f in cls.__dataclass_fields__}
+    known["powertrain_type"] = normalize_powertrain_type(known["powertrain_type"])
     return cls(**known)
 
 
@@ -63,7 +76,7 @@ class J6BJobSpec:
 class MMTJobSpec:
     vehicle: str = ""
     software_version: str = ""
-    powertrain_type: str = "PHEV/BEV"
+    powertrain_type: str = "PHEV"
     task_name: str = ""
     template_config_path: str = ""
     source_path: str = ""
@@ -101,6 +114,7 @@ class MMTJobSpec:
 class CompareJobSpec:
     task_name: str = ""
     report_profile: str = "J6B"
+    powertrain_type: str = "PHEV"
     base_path: str = ""
     target_path: str = ""
     template_path: str = ""

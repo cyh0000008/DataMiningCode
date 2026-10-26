@@ -29,7 +29,7 @@ class FollowStopMinJerkMetric(BaseMetric):
                     events.append(event_from_segment(frame, seg, 100.0, "%s missing" % self.measure, extra))
                 continue
             measured += 1
-            lower = value_for_powertrain(self.powertrain_type, -2.3, -2.6)
+            lower = value_for_powertrain(self.powertrain_type, ice_value=-2.6, phev_value=-2.3, bev_value=-2.3)
             upper = self.upper
             if self.measure == "min_acc_dynamic":
                 lower = extra.get("dynamic_lower", lower)

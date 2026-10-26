@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from .. import presets
 from ..job_manager import JobManager
-from ..job_spec import JOB_KIND_COMPARE, CompareJobSpec
+from ..job_spec import JOB_KIND_COMPARE, CompareJobSpec, POWERTRAIN_TYPES
 from ..paths import AppSettings
 
 
@@ -60,6 +60,11 @@ class CompareForm(QWidget):
         self.profile_combo.addItems(["J6B", "MMT"])
         self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
         form.addRow("报告配置：", self.profile_combo)
+
+        self.powertrain_combo = QComboBox()
+        self.powertrain_combo.addItems(POWERTRAIN_TYPES)
+        self.powertrain_combo.setCurrentText("PHEV")
+        form.addRow("动力形式：", self.powertrain_combo)
 
         base_row = QHBoxLayout()
         self.base_path_edit = QLineEdit()
@@ -144,6 +149,7 @@ class CompareForm(QWidget):
         return CompareJobSpec(
             task_name=self.task_name_edit.text(),
             report_profile=self.profile_combo.currentText(),
+            powertrain_type=self.powertrain_combo.currentText(),
             base_path=self.base_path_edit.text().strip(),
             target_path=self.target_path_edit.text().strip(),
             template_path=self.template_path_edit.text().strip(),
@@ -153,6 +159,9 @@ class CompareForm(QWidget):
 
     def _apply_spec(self, spec: CompareJobSpec) -> None:
         self.task_name_edit.setText(spec.task_name)
+        powertrain_index = self.powertrain_combo.findText(spec.powertrain_type)
+        if powertrain_index >= 0:
+            self.powertrain_combo.setCurrentIndex(powertrain_index)
         index = self.profile_combo.findText(spec.report_profile)
         if index >= 0:
             self.profile_combo.setCurrentIndex(index)

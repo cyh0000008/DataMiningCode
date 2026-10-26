@@ -55,8 +55,9 @@ python J6B_UnifiedMining/DataMining.py <临时生成的config.json>
 （默认 `J6B_UnifiedMining/config.json`）里原样保留，只覆盖表单里填写的部分，
 生成一份临时 config.json 提交运行，运行结束后自动清理。
 
-“动力形式”在 J6B 挖掘页的运行参数中选择 `PHEV/BEV` 或 `ICE`，所选值会覆盖模板配置中的
+“动力形式”在 J6B 挖掘页的运行参数中选择 `ICE`、`PHEV` 或 `BEV`，所选值会覆盖模板配置中的
 `powertrain_type`，用于选择对应的指标筛选阈值；同时会保存在任务预设中。
+自动生成对比报告时也会沿用该动力形式，显式传入 `--powertrain-type`，不会回退到对比脚本默认值。
 
 表单下方的“挖掘完成后自动生成对比报告”默认勾选：挖掘成功后会从 stdout 里
 `Report written: <路径>` 这一行捕获本次生成的报告路径，作为对比报告的
@@ -82,8 +83,8 @@ python J6B_UnifiedMining/DataMining.py <临时生成的config.json>
 python MMT_UnifiedMining/DataMining.py --config <临时生成的config.json> --resume auto
 ```
 
-MMT 挖掘页也可在运行参数中选择动力形式（`PHEV/BEV` 或 `ICE`）；所选值会覆盖模板配置中的
-`powertrain_type`、保存在任务预设中，并传入 Topic 指标判定。
+MMT 挖掘页也可在运行参数中选择动力形式（`ICE`、`PHEV` 或 `BEV`）；所选值会覆盖模板配置中的
+`powertrain_type`、保存在任务预设中，并传入指标判定和后续自动对比报告。
 
 同样以模板配置合并覆盖的方式生成临时配置；`pipelines` 内每个 pipeline 的
 `func_folder_path` 等相对路径会在写出前自动转换为绝对路径，避免因为临时文件
@@ -110,6 +111,12 @@ MMT 使用同样的命名、归档和表头识别规则，日期使用“查询�
 任务自动触发对比时在后台实际执行的同一段逻辑；自动触发生成的对比任务会
 出现在任务队列里，名称形如“对比报告（自动）- <来源任务名>”，可点开日志
 查看其完整命令行和执行输出。
+
+单独生成对比报告时，请在此页选择对应的动力形式；该选项也随预设保存。
+筛选标准列优先使用模板中该动力形式对应的标准，不会用旧固定阈值覆盖模板。
+三种动力形式分别维护独立标准：ICE 沿用原 ICE 标准，PHEV 和 BEV 的初始标准各自沿用原
+PHEV/BEV 标准。旧预设中的 `PHEV/BEV` 会提示警告并迁移为 `PHEV`，纯电车辆请明确选择 `BEV`；
+旧预设未填写该字段时，J6B 默认 ICE，MMT 和对比页默认 PHEV。
 
 J6B、MMT 对比报告默认命名为
 `车型-Base软件版本-Target软件版本-YYYY-MM-DD-HH-MM.xlsx`，例如
@@ -165,6 +172,20 @@ chmod +x packaging/build_linux.sh
 两个平台打包出的程序都只是 UnifiedApp 自身（GUI + 调度逻辑），仍然需要机器上
 另外安装好可以运行 J6B / MMT / CompareKPI 三个工程各自依赖的 Python 环境，
 并在“环境设置”里指向对应的 Python 解释器。
+
+修改应用参数或自动对比逻辑后，Windows 和 Ubuntu 都需要分别重新打包；已存在的 dist
+不会自动更新。还需要同步三个业务工程的代码及对比模板到运行机器上的实际工程目录。
+
+## 动力形式回归测试
+
+在仓库根目录执行（测试环境需同时具备 PySide6、openpyxl 和 J6B/MMT 挖掘依赖）：
+
+```text
+python -m unittest discover -s UnifiedApp\tests -v
+```
+
+测试覆盖 J6B/MMT 三种动力形式的界面取值、临时配置、预设、起步 jerk 判定及自动对比参数传递，
+并以合成挖掘结果实际调用对比脚本生成 Excel，逐行检查筛选标准。它不替代真实 H5 数据的挖掘验证。
 
 ## 目录结构
 

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from .. import presets
 from ..job_manager import JobManager
-from ..job_spec import JOB_KIND_MMT, MMTJobSpec
+from ..job_spec import JOB_KIND_MMT, MMTJobSpec, POWERTRAIN_TYPES
 from ..paths import AppSettings
 
 
@@ -64,8 +64,8 @@ class MMTForm(QWidget):
         form.addRow("当前报告软件版本：", self.software_version_edit)
 
         self.powertrain_combo = QComboBox()
-        self.powertrain_combo.addItems(["PHEV/BEV", "ICE"])
-        self.powertrain_combo.setCurrentText("PHEV/BEV")
+        self.powertrain_combo.addItems(POWERTRAIN_TYPES)
+        self.powertrain_combo.setCurrentText("PHEV")
         form.addRow("动力形式：", self.powertrain_combo)
 
         template_row = QHBoxLayout()

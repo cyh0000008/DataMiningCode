@@ -69,7 +69,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     check_result: bool = False
     powertrain_type = get_powertrain_type(comprehensive_frames)
-    max_time = value_for_powertrain(powertrain_type, 3.5, 4.0)
+    max_time = value_for_powertrain(powertrain_type, ice_value=4.0, phev_value=3.5, bev_value=3.5)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)

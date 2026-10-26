@@ -4,8 +4,9 @@
 
 检查 ACC 刚开启后的窗口。窗口长度由 `config.json` 的 `powertrain_type` 决定：
 
-- `PHEV/BEV`：1 秒
 - `ICE`：3 秒
+- `PHEV`：1 秒
+- `BEV`：1 秒
 
 只看 ACC 成功进入 active、且窗口内驾驶员没有 override 的场景。
 
@@ -38,8 +39,9 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 
 以上升沿当前采样点作为窗口起点，按动力形式向后取完整窗口：
 
-- `PHEV/BEV`: `start_window_seconds = 1.0`
 - `ICE`: `start_window_seconds = 3.0`
+- `PHEV`: `start_window_seconds = 1.0`
+- `BEV`: `start_window_seconds = 1.0`
 
 如果数据长度不够 1 秒，这次开启不计入统计。
 
@@ -66,7 +68,7 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 
 ## 6. 主要参数
 
-- `start_window_seconds = 1.0`（PHEV/BEV）或 `3.0`（ICE）
+- `start_window_seconds` 分别配置：ICE 为 `3.0`，PHEV 为 `1.0`，BEV 为 `1.0`
 - `smoothing_window = 5`
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`

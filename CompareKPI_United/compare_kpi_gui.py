@@ -18,8 +18,7 @@ from mpi_cpi_compare import (
     DEFAULT_REPORT_DIR,
     DEFAULT_TEMPLATE_DIR,
     DEFAULT_POWERTRAIN_TYPE,
-    POWERTRAIN_ICE,
-    POWERTRAIN_PHEV_BEV,
+    POWERTRAIN_TYPES,
     REPORT_PROFILE_J6B,
     REPORT_PROFILE_MMT,
     build_report,
@@ -134,7 +133,7 @@ class CompareKpiApp:
         powertrain_box = ttk.Combobox(
             config,
             textvariable=self.powertrain_type,
-            values=(POWERTRAIN_PHEV_BEV, POWERTRAIN_ICE),
+            values=POWERTRAIN_TYPES,
             state="readonly",
             width=12,
         )
@@ -177,7 +176,7 @@ class CompareKpiApp:
         log_frame.columnconfigure(0, weight=1)
         self.log_text = self._make_log_widget(log_frame)
         self._log("base 可以留空；target 必须选择文件或文件夹。")
-        self._log("PHEV/BEV 与 ICE 当前使用相同的指标筛选标准。")
+        self._log("动力形式可选 ICE、PHEV、BEV，报告按所选类型读取对应的独立筛选标准。")
         self._log("输出固定写入：%s" % output_dir())
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: StringVar, optional: bool) -> None:

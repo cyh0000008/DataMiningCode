@@ -69,7 +69,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
     check_result: bool = False
     powertrain_type = get_powertrain_type(comprehensive_frames)
-    fluct_threshold = value_for_powertrain(powertrain_type, 0.3, 0.6)
+    fluct_threshold = value_for_powertrain(powertrain_type, ice_value=0.6, phev_value=0.3, bev_value=0.3)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)

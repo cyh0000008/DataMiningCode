@@ -4,7 +4,8 @@ from typing import Any
 
 import numpy as np
 
-from metric_utils import BaseMetric, MetricEvent, MetricResult, display_speed_array, mask_to_segments, time_window_moving_average
+from metric_utils import BaseMetric, MetricEvent, MetricResult, display_speed_array, mask_to_segments, time_window_moving_average, severity_outside, within_bounds
+from powertrain_utils import value_for_powertrain
 from signal_preprocessor import SignalFrame
 
 
@@ -72,7 +73,7 @@ def create_metric_class(stratum: str, measurement: str) -> type[BaseMetric]:
 
     class DrivingUninterferedAccelerationMetric(BaseMetric):
         category = "CPI"
-        result_mode = "measurement_mean"
+        result_mode = "case_rate"
         required_fields = REQUIRED_FIELDS
 
         def __init__(self) -> None:
@@ -105,15 +106,31 @@ def create_metric_class(stratum: str, measurement: str) -> type[BaseMetric]:
                 if lower_kph <= item["initial_speed_kph"] < upper_kph
             ]
             metric_field = MEASUREMENT_FIELDS[measurement]
+            standards = value_for_powertrain(
+                self.powertrain_type,
+                ice_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+                phev_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+                bev_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+            )
+            lower, upper = standards[measurement]
+
+            def is_bad(value: float) -> bool:
+                if measurement == "avg_acc":
+                    return value <= lower
+                if measurement == "accel_build_time":
+                    return value >= upper
+                return not within_bounds(value, lower, upper)
+
             events = [
                 MetricEvent(
                     start_s=item["start_s"],
                     end_s=item["end_s"],
-                    severity=0.0,
+                    severity=severity_outside(item[metric_field], lower, upper, 1.0),
                     message="%s=%.6f" % (metric_field, item[metric_field]),
                     values={**item, "measurement_value": item[metric_field]},
                 )
                 for item in selected
+                if is_bad(item[metric_field])
             ]
             return MetricResult(
                 metric_name=self.name,
@@ -122,9 +139,9 @@ def create_metric_class(stratum: str, measurement: str) -> type[BaseMetric]:
                 source_path=frame.source_path,
                 distance_km=frame.distance_km,
                 distance_status=frame.distance_status,
-                total_cases=len(events),
-                bad_cases=0,
-                severity_score=0.0,
+                total_cases=len(selected),
+                bad_cases=len(events),
+                severity_score=max((event.severity for event in events), default=0.0),
                 events=events,
                 details=[event.message for event in events],
             )

@@ -4,6 +4,7 @@ from bisect import bisect_right
 from typing import Any
 
 import numpy as np
+from powertrain_utils import get_powertrain_type, value_for_powertrain
 
 
 QUALIFICATION_SECONDS = 0.5
@@ -38,6 +39,22 @@ def run_metric(comprehensive_frames: list[dict[str, Any]], stratum: str, measure
         if lower_kph <= item["initial_speed_kph"] < upper_kph
     ]
     values = [float(item[field]) for item in selected]
+    standards = value_for_powertrain(
+        get_powertrain_type(comprehensive_frames),
+        ice_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+        phev_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+        bev_value={"max_acc": (1.5, 2.5), "avg_acc": (1.5, None), "accel_build_time": (None, 3.5)},
+    )
+    lower, upper = standards[measurement]
+
+    def is_bad(value: float) -> bool:
+        if measurement == "avg_acc":
+            return value <= lower
+        if measurement == "accel_build_time":
+            return value >= upper
+        return value < lower or value > upper
+
+    bad_values = [value for value in values if is_bad(value)]
     details = [
         (
             "[%s] start=%.3fs end=%.3fs initial_speed=%.3fkph "
@@ -54,12 +71,14 @@ def run_metric(comprehensive_frames: list[dict[str, Any]], stratum: str, measure
     ]
     stats = {
         "All Case Count": len(values),
-        "Bad Case": 0,
-        "Severity Score": 0.0,
-        "Metric Value Sum": sum(values),
-        "Metric Value Count": len(values),
+        "Bad Case": len(bad_values),
+        "Severity Score": max((
+            max(lower - value if lower is not None else 0.0,
+                value - upper if upper is not None else 0.0) * 100.0
+            for value in bad_values
+        ), default=0.0),
     }
-    return False, details, stats
+    return bool(bad_values), details, stats
 
 
 def extract_observations(comprehensive_frames: list[dict[str, Any]]) -> list[dict[str, float]]:
