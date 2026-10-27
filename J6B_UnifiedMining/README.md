@@ -37,6 +37,9 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 
 代码里每个 Metric 都带 `category` 字段；报告里用 `指标类型` 列标明 CPI/MPI，不拆成两份报告。
 
+控制抖动和跟车刹停波动指标已移除，不再加载、挖掘或输出报告。
+点刹保留原挖掘逻辑，版本对比报告中的准出标准在三种动力形式下统一为 MPI ≥80。
+
 汇总页固定使用一列 `指标值`：
 
 - CPI 指标沿用原口径：无 Bad Case 时显示 `100.0(总Case/Bad Case)`，有 Bad Case 时显示 `总Case / Bad Case`。

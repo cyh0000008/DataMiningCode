@@ -29,6 +29,9 @@ Other updated template criteria include stop-and-go maximum acceleration (1.0-2.
 
 ## Uninterfered driving acceleration
 
+The follow-stop fluctuation metric has been removed from mining and comparison reports.
+Control shake is also excluded from comparison reports (MMT did not implement this metric).
+
 For all initial-speed strata and ICE/PHEV/BEV, each valid event's maximum acceleration
 must lie in the inclusive interval [1.5, 2.5] m/s2. Values outside this interval count
 as Bad Cases. Severity is the exceedance in m/s2 divided by 1 m/s2, multiplied by 100.

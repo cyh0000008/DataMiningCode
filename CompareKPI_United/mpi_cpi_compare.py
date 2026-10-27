@@ -89,7 +89,6 @@ SIGNAL_MAP: dict[str, tuple[str, str, str]] = {
     "跟车刹停最大减速度": ("topic", "follow_stop_max_acc", "CPI"),
     "跟车刹停距离": ("topic", "follow_stop_min_frntobj_dis", "CPI"),
     "跟车刹停舒适性": ("topic", "follow_stop_min_jerk", "CPI"),
-    "跟车刹停波动": ("topic", "follow_stop_fluct", "CPI"),
     "跟车刹停反应": ("topic", "follow_stop_ttc", "CPI"),
     "跟车刹停风险": ("topic", "follow_stop_min_ttc_frntobj_dec", "CPI"),
     "跟车起步响应时延": ("topic", "follow_start_latency", "CPI"),
@@ -107,7 +106,6 @@ SIGNAL_MAP: dict[str, tuple[str, str, str]] = {
     "点刹": ("can", "acc_brake_tap_count", "MPI"),
     "重制动": ("can", "acc_heavy_braking_count", "MPI"),
     "顿挫": ("can", "acc_jerkiness", "MPI"),
-    "控制抖动": ("can", "control_shake_count", "MPI"),
     "Override后顿挫": ("can", "acc_jerkiness_after_override_release", "MPI"),
     "Override后重制动": ("can", "acc_heavy_braking_after_override_release_count", "MPI"),
     "行车断握手": ("can", "acc_lost_arbitration", "MPI"),
@@ -149,6 +147,96 @@ POWERTRAIN_ICE = "ICE"
 POWERTRAIN_TYPES = (POWERTRAIN_ICE, POWERTRAIN_PHEV, POWERTRAIN_BEV)
 DEFAULT_POWERTRAIN_TYPE = POWERTRAIN_PHEV
 
+RELEASE_THRESHOLDS = {
+    REPORT_PROFILE_J6B: {
+        "起步最大加速度": 30,
+        "起步最大jerk": 30,
+        "初段建立时间": 30,
+        "起步加速建立时间": 10,
+        "弯道安全速度": 24,
+        "弯道限速最大减速度": 24,
+        "弯道限速减速舒适性": 16,
+        "坡道稳速抖动": 30,
+        "坡道控速稳定性": 20,
+        "坡道控速舒适性": 20,
+        "跟车刹停最大减速度": 24,
+        "跟车刹停距离": 8,
+        "跟车刹停舒适性": 12,
+        "跟车刹停反应": 24,
+        "跟车刹停风险": 12,
+        "跟车起步响应时延": 24,
+        "跟车起步舒适性": 16,
+        "溜车": 500,
+        "无前车稳速未达到SetSpeed": 200,
+        "不合理低速": 100,
+        "制动跳变导致的实车加速度抖动": 500,
+        "点刹": 80,
+        "重制动": 80,
+        "顿挫": 80,
+        "Override后顿挫": 500,
+        "Override后重制动": 500,
+        "行车断握手": 1000,
+        "进Override后顿挫": 500,
+        "起步顿挫": 320,
+    },
+    REPORT_PROFILE_MMT: {
+        "起步最大加速度": 30,
+        "起步最大jerk": 30,
+        "初段建立时间": 30,
+        "起步加速建立时间": 10,
+        "弯道安全速度": 30,
+        "弯道限速最大减速度": 30,
+        "弯道限速减速舒适性": 20,
+        "坡道稳速抖动": 30,
+        "坡道控速稳定性": 20,
+        "坡道控速舒适性": 20,
+        "跟车刹停最大减速度": 30,
+        "跟车刹停距离": 10,
+        "跟车刹停舒适性": 15,
+        "跟车刹停反应": 30,
+        "跟车刹停风险": 15,
+        "跟车起步响应时延": 30,
+        "跟车起步舒适性": 20,
+        "红灯刹停距停止线距离": 30,
+        "红灯刹停舒适性": 10,
+        "绿灯起步响应时延": 15,
+        "绿灯起步最大加速度": 15,
+        "绿灯起步加速时间": 15,
+        "绿灯起步舒适性": 15,
+        "溜车": 500,
+        "无前车稳速未达到SetSpeed": 200,
+        "不合理低速": 100,
+        "制动跳变导致的实车加速度抖动": 500,
+        "点刹": 80,
+        "重制动": 100,
+        "顿挫": 100,
+        "Override后顿挫": 500,
+        "Override后重制动": 500,
+        "行车断握手": 1000,
+        "进Override后顿挫": 500,
+        "起步顿挫": 400,
+    },
+}
+POWERTRAIN_RELEASE_THRESHOLDS = {
+    powertrain: {
+        profile: dict(thresholds) for profile, thresholds in RELEASE_THRESHOLDS.items()
+    }
+    for powertrain in POWERTRAIN_TYPES
+}
+POWERTRAIN_RELEASE_THRESHOLDS[POWERTRAIN_ICE][REPORT_PROFILE_J6B].update(
+    {"顿挫": 70, "起步顿挫": 280}
+)
+POWERTRAIN_RELEASE_THRESHOLDS[POWERTRAIN_ICE][REPORT_PROFILE_MMT].update(
+    {"顿挫": 90, "起步顿挫": 360}
+)
+RELEASE_FONT_COLORS = {
+    "可准出": "008000",
+    "不满足准出": "FF0000",
+    "样本不足，无法判定": "9C6500",
+    "数据缺失或无效，无法判定": "9C6500",
+    "未配置准出标准": "666666",
+}
+
 # J6B 保留当前 J6B 配置需要的指标；MMT 使用完整模板。
 J6B_METRIC_NAMES = frozenset(
     {
@@ -165,7 +253,6 @@ J6B_METRIC_NAMES = frozenset(
         "跟车刹停最大减速度",
         "跟车刹停距离",
         "跟车刹停舒适性",
-        "跟车刹停波动",
         "跟车刹停反应",
         "跟车刹停风险",
         "跟车起步响应时延",
@@ -177,7 +264,6 @@ J6B_METRIC_NAMES = frozenset(
         "点刹",
         "重制动",
         "顿挫",
-        "控制抖动",
         "Override后顿挫",
         "Override后重制动",
         "行车断握手",
@@ -215,7 +301,6 @@ METRIC_STANDARDS: dict[str, str] = {
     "跟车刹停舒适性": ">=-2m/s3",
     "跟车刹停反应": "TTC>=2.5s",
     "跟车刹停风险": "TTC>=1.5s",
-    "跟车刹停波动": "<=3次",
     "跟车起步响应时延": "<=2.5s",
     "跟车起步舒适性": "1.0~2.5m/s3",
     "红灯刹停距停止线距离": "0~4m",
@@ -259,7 +344,6 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "坡道控速稳定性": "|加速度|<=1.0m/s2",
     "坡道控速舒适性": "|jerk|<=1.5m/s3",
     "跟车刹停舒适性": ">=-2.5m/s3",
-    "跟车刹停波动": "<=3次",
     "跟车刹停风险": "TTC>=1.5s",
     "溜车": "ACC active，前进挡，车速<=0.5kph，轮速>=0.01，持续>=0.20s",
     "无前车稳速未达到SetSpeed": "ACC active且无override/前车/cutin，稳定>=8s、车速波动<=2kph，未达到SetSpeed",
@@ -267,7 +351,6 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "点刹": "ACC active且无override；无前车稳速或稳定跟车中制动点刹。点刹：制动扭矩短脉冲0.08~1.50s、峰值突出>=180Nm、加速度下探>=0.2m/s2；无前车稳速：无前车/cutin、车速>5kph、稳定>=8s、车速波动<=2kph、SetSpeed波动<=0.1kph；稳定跟车：前车有效、距离5~100m、相对速度<=1.5m/s、稳定>=8s、车速波动<=5kph、前车距离波动<=10m",
     "重制动": "ACC active且无override；加速度<-2.0m/s2持续>=0.20s，1.0s回看窗内减速度跳变>=3.0m/s2且负向斜率>=3.0m/s3，相邻事件间隔<=0.50s合并",
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，车速>0，候选时长>0.5s且<=4s，幅值>=0.75，符号翻转>=1，扭矩/jerk校验通过",
-    "控制抖动": "全程ACC active且车速>5kph，8s内驱动/制动扭矩抖动；驱动类acc_amp>=0.8m/s2，制动类acc_amp>=1.45m/s2",
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
 }
 for metric_name in DRIVING_ACCEL_METRIC_NAMES:
@@ -1219,6 +1302,56 @@ def compare_metric(base: MetricValue, target: MetricValue) -> tuple[str, float |
         return "无法比较", number_diff, bad_diff, "缺少可比较数值"
 
 
+def assess_release(value: MetricValue, threshold: float | None, metric_type: str) -> str:
+    if threshold is None:
+        return "未配置准出标准"
+    text = "" if value.raw is None else str(value.raw).strip()
+    invalid = "数据缺失或无效，无法判定"
+    if not text or re.search(r"\bn\s*=", text):
+        return invalid
+    total, bad = parse_metric_parenthetical(text)
+    if total is not None and bad is not None:
+        prefix = text.replace("（", "(").split("(", 1)[0].strip().replace(",", "")
+        if (
+            re.fullmatch(r"(?:>=|>|≥)?\s*\d+(?:\.\d+)?", prefix) is None
+            or not math.isfinite(total) or not math.isfinite(bad)
+            or total < 0 or bad < 0 or not bad.is_integer()
+            or (metric_type == "CPI" and bad > total)
+        ):
+            return invalid
+        if total == 0:
+            return "样本不足，无法判定" if bad == 0 else invalid
+        if bad == 0:
+            return "可准出" if total >= threshold else "样本不足，无法判定"
+        return "可准出" if total / bad >= threshold else "不满足准出"
+
+    # Bare numeric legacy results remain usable; never extract a number from N/A or n=.
+    match = re.fullmatch(r"(>=|>|≥)?\s*(\d+(?:\.\d+)?)", text.replace(",", ""))
+    if match is None:
+        return invalid
+    number = float(match.group(2))
+    if not math.isfinite(number):
+        return invalid
+    if number >= threshold:
+        return "可准出"
+    if match.group(1):
+        return "样本不足，无法判定"
+    return "不满足准出"
+
+
+def write_release_columns(ws) -> None:
+    for col, side in ((9, "Base"), (10, "Target")):
+        cell = ws.cell(5, col, f"{side}准出标准及结论")
+        copy_cell_style(ws["D5"], cell)
+        cell.comment = Comment(
+            "按本报告动力形式判断。CPI=总次数/Bad Case；MPI=总里程(km)/Bad Case。"
+            "零Bad时，总次数或总里程达到准出阈值才可准出，否则样本不足。"
+            "未配置标准、缺失数据及历史测量均值不作通过/不通过判断。",
+            "MPI/CPI 对比工具",
+        )
+        ws.column_dimensions[get_column_letter(col)].width = 34
+
+
 def compare_measurement(
     base: MetricValue,
     target: MetricValue,
@@ -1723,6 +1856,9 @@ def build_report(
         ws, report_profile, metric_filter_for_profile(report_profile)
     )
     apply_metric_standards(ws, report_profile, powertrain_type)
+    write_release_columns(ws)
+    release_thresholds = POWERTRAIN_RELEASE_THRESHOLDS[powertrain_type][report_profile]
+    release_cells: list[tuple[Any, str]] = []
 
     datasets: dict[tuple[str, str], dict[str, dict[str, MetricValue]]] = {}
     for kind, info in base_reports.items():
@@ -1750,6 +1886,13 @@ def build_report(
             else MetricValue()
         )
         target_value = get_value(datasets, "target", kind, english_name, metric_type)
+        threshold = release_thresholds.get(cn_name)
+        for col, value in ((9, base_value), (10, target_value)):
+            status = assess_release(value, threshold, metric_type)
+            standard = f"{metric_type} ≥{threshold:g}\n" if threshold is not None else ""
+            cell = ws.cell(row, col, standard + status)
+            copy_cell_style(ws.cell(row, 8), cell)
+            release_cells.append((cell, status))
 
         for col in (BASE_MPI_COL, BASE_CPI_COL, TARGET_MPI_COL, TARGET_CPI_COL):
             ws[f"{col}{row}"] = MISSING_DISPLAY
@@ -1811,7 +1954,10 @@ def build_report(
         author="MPI/CPI 对比工具",
     )
     apply_workbook_format(wb)
+    for cell, status in release_cells:
+        set_font_name(cell, color=RELEASE_FONT_COLORS[status])
     insert_powertrain_header(ws, powertrain_type)
+    ws.print_area = f"A1:J{ws.max_row}"
     wb.save(output)
     return output
 

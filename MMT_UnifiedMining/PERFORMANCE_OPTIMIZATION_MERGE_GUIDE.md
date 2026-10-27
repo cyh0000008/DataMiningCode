@@ -201,7 +201,7 @@ process_topic_folder 中：
 | stop2go | 4 |
 | traffic light stop2go | 5 |
 
-场景逻辑不同的指标继续独立计算，例如 follow start 指标对、red light stop 指标对和 follow_stop_fluct。
+场景逻辑不同的指标继续独立计算，例如 follow start 指标对和 red light stop 指标对。
 
 ### 6.3 缓存边界
 
