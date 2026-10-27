@@ -144,7 +144,16 @@ python .\mpi_cpi_compare.py `
 - base 和 target 的 bad case 都为 `0` 时标记为一致。
 - 只有一边 bad case 为 `0` 时，bad case 为 `0` 的一边更优。
 - 两边 bad case 都非 `0` 时，优先比较括号前的 MPI/CPI 指标值，指标值更大的一边更优。
-- target 更好时标绿色，更差时标红色。
+- Target 数值单元格的底色采用以下显著变化规则，不再对所有提升/降低直接着色：
+  - Base 不满足准出，且（Target/Base ≥4 且 Target−Base ≥5）、Target−Base ≥10、
+    或 Target 零 Bad 而 Base 非零 Bad，任一成立标绿色。
+  - Target 不满足准出，且（Base/Target ≥4 且 Base−Target ≥5）、Base−Target ≥10、
+    或 Base 零 Bad 而 Target 非零 Bad，任一成立标浅黄色。
+  - 差值 5、差值 10 和倍数 4 均包含边界；有 Bad 时按原始总量/Bad 计算，
+    零 Bad 的展示值不参加倍数/差值比较，只按零 Bad 条件判断。
+  - 两侧相等、缺失/无效、样本不足、未配置准出标准或其余情形不着色。
+    旧报告仅有 `>数值` 时不将下限当成确定值比较。
+- 准出结论列的绿色/红色文字保持不变；明细表的原相对优劣比较保持不变。
 - 无法解析指标值时，退回比较 bad case 数量。
 
 ## 准出判断

@@ -187,6 +187,10 @@ print("Loaded metrics:", len(names))
         ws.append(["topic", "follow_stop_fluct", "CPI", 800, 30, 1, None, "30(30/1)"])
         ws.append(["topic", "slope_no_frnt_acc", "CPI", 800, 0, 0, None, "100.0(0/0)"])
         ws.append(["can", "acc_set_speed_reach", "MPI", 0, 0, 0, ">0.000(0.000/0)", None])
+        ws.append(["topic", "follow_stop_min_jerk", "CPI", 800, 8 if base else 2, 1,
+                   None, "8(8/1)" if base else "2(2/1)"])
+        ws.append(["can", "acc_heavy_braking_count", "MPI", 20 if base else 80, 4, 1,
+                   "20(20/1)" if base else "80(80/1)", None])
         wb.save(path)
         wb.close()
 
@@ -217,6 +221,13 @@ print("Loaded metrics:", len(names))
                         self.assertEqual(ws["G2"].value, powertrain)
                         self.assertEqual(len(find_comparison_date_groups(ws)), 2)
                         rows = {ws.cell(r, 2).value: r for r in range(7, ws.max_row + 1)}
+                        for metric, col, color in (
+                            ("跟车刹停舒适性", 8, "FFF2CC"),
+                            ("重制动", 7, "C6EFCE"),
+                            ("起步最大jerk", 8, "FFFFFF"),
+                            ("溜车", 7, "FFFFFF"),
+                        ):
+                            self.assertEqual(ws.cell(rows[metric], col).fill.fgColor.rgb[-6:], color)
                         for removed in ("控制抖动", "跟车刹停波动"):
                             self.assertNotIn(removed, rows)
                         if profile == "J6B":

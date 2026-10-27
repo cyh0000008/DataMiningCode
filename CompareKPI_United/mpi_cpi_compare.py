@@ -1369,12 +1369,51 @@ def compare_measurement(
     return "数值对比", number_diff, None, "展示样本均值及差值；未定义优劣阈值，不作优劣着色"
 
 
+def target_highlight(
+    base: MetricValue, target: MetricValue, threshold: float | None, metric_type: str,
+) -> str:
+    base_status = assess_release(base, threshold, metric_type)
+    target_status = assess_release(target, threshold, metric_type)
+    if base_status not in {"可准出", "不满足准出"} or target_status not in {"可准出", "不满足准出"}:
+        return ""
+
+    def comparable_value(value: MetricValue) -> tuple[float | None, float | None]:
+        total, bad = parse_metric_parenthetical(value.raw)
+        if total is not None and bad is not None:
+            return (total / bad if bad > 0 else None), bad
+        text = str(value.raw).strip().replace(",", "")
+        if re.fullmatch(r"\d+(?:\.\d+)?", text):
+            return float(text), None
+        return None, None
+
+    base_number, base_bad = comparable_value(base)
+    target_number, target_bad = comparable_value(target)
+    if base_status == "不满足准出":
+        if target_bad == 0 and base_bad is not None and base_bad > 0:
+            return "提升"
+        if base_number is not None and target_number is not None:
+            if target_number > base_number and (
+                (target_number >= base_number * 4 and target_number - base_number >= 5)
+                or target_number - base_number >= 10
+            ):
+                return "提升"
+    if target_status == "不满足准出":
+        if base_bad == 0 and target_bad is not None and target_bad > 0:
+            return "降低"
+        if base_number is not None and target_number is not None:
+            if base_number > target_number and (
+                (base_number >= target_number * 4 and base_number - target_number >= 5)
+                or base_number - target_number >= 10
+            ):
+                return "降低"
+    return ""
+
+
 def color_target_cell(cell, result: str) -> None:
+    cell.fill = WHITE_FILL
     if result == "提升":
         cell.fill = GREEN_FILL
     elif result == "降低":
-        cell.fill = RED_FILL
-    elif result == "缺失":
         cell.fill = YELLOW_FILL
 
 
@@ -1901,6 +1940,7 @@ def build_report(
 
         for col in (BASE_MPI_COL, BASE_CPI_COL, TARGET_MPI_COL, TARGET_CPI_COL):
             ws[f"{col}{row}"] = MISSING_DISPLAY
+            ws[f"{col}{row}"].fill = WHITE_FILL
 
         if base_available:
             ws[f"{base_col}{row}"] = display_raw(base_value)
@@ -1913,7 +1953,10 @@ def build_report(
                 compare_reason = "历史加速指标为测量均值，与当前阈值型CPI口径不同；需重新挖掘"
             else:
                 result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
-                color_target_cell(ws[f"{target_col}{row}"], result)
+                color_target_cell(
+                    ws[f"{target_col}{row}"],
+                    target_highlight(base_value, target_value, threshold, metric_type),
+                )
         else:
             result, number_diff, bad_diff = "仅target", None, None
             compare_reason = "base为空，仅展示target结果"
