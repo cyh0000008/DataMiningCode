@@ -1322,7 +1322,7 @@ def assess_release(value: MetricValue, threshold: float | None, metric_type: str
         if total == 0:
             return "样本不足，无法判定" if bad == 0 else invalid
         if bad == 0:
-            return "可准出" if total >= threshold else "样本不足，无法判定"
+            return "可准出"
         return "可准出" if total / bad >= threshold else "不满足准出"
 
     # Bare numeric legacy results remain usable; never extract a number from N/A or n=.
@@ -1340,16 +1340,19 @@ def assess_release(value: MetricValue, threshold: float | None, metric_type: str
 
 
 def write_release_columns(ws) -> None:
-    for col, side in ((9, "Base"), (10, "Target")):
-        cell = ws.cell(5, col, f"{side}准出标准及结论")
+    for col, label in (
+        (9, "Base准出标准"), (10, "Base准出结论"),
+        (11, "Target准出标准"), (12, "Target准出结论"),
+    ):
+        cell = ws.cell(5, col, label)
         copy_cell_style(ws["D5"], cell)
         cell.comment = Comment(
             "按本报告动力形式判断。CPI=总次数/Bad Case；MPI=总里程(km)/Bad Case。"
-            "零Bad时，总次数或总里程达到准出阈值才可准出，否则样本不足。"
+            "零Bad时，CPI总次数或MPI总里程大于0即可准出；等于0时样本不足。"
             "未配置标准、缺失数据及历史测量均值不作通过/不通过判断。",
             "MPI/CPI 对比工具",
         )
-        ws.column_dimensions[get_column_letter(col)].width = 34
+        ws.column_dimensions[get_column_letter(col)].width = 24 if col in (9, 11) else 34
 
 
 def compare_measurement(
@@ -1887,10 +1890,12 @@ def build_report(
         )
         target_value = get_value(datasets, "target", kind, english_name, metric_type)
         threshold = release_thresholds.get(cn_name)
-        for col, value in ((9, base_value), (10, target_value)):
+        for col, value in ((9, base_value), (11, target_value)):
             status = assess_release(value, threshold, metric_type)
-            standard = f"{metric_type} ≥{threshold:g}\n" if threshold is not None else ""
-            cell = ws.cell(row, col, standard + status)
+            standard = f"{metric_type} ≥{threshold:g}" if threshold is not None else "未配置准出标准"
+            standard_cell = ws.cell(row, col, standard)
+            copy_cell_style(ws.cell(row, 8), standard_cell)
+            cell = ws.cell(row, col + 1, status)
             copy_cell_style(ws.cell(row, 8), cell)
             release_cells.append((cell, status))
 
@@ -1957,7 +1962,7 @@ def build_report(
     for cell, status in release_cells:
         set_font_name(cell, color=RELEASE_FONT_COLORS[status])
     insert_powertrain_header(ws, powertrain_type)
-    ws.print_area = f"A1:J{ws.max_row}"
+    ws.print_area = f"A1:L{ws.max_row}"
     wb.save(output)
     return output
 
