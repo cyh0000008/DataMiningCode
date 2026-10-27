@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from powertrain_utils import normalize_powertrain_type
+from metric_display_names import metric_display_name
 
 PIPELINE_CAN = "can"
 PIPELINE_TOPIC = "topic"
@@ -2331,6 +2332,15 @@ def generate_unified_report(
         cpi_comment = "CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径"
         cpi_cell.comment = Comment(text=cpi_comment, author="统一统计脚本")
 
+    ws_main.insert_cols(3)
+    name_header = ws_main.cell(row=1, column=3, value="中文指标名称")
+    name_header.font = header_font
+    name_header.alignment = header_alignment
+    for row_idx, row_data in enumerate(statistics_result, 2):
+        ws_main.cell(
+            row=row_idx, column=3, value=metric_display_name(row_data["指标名称"])
+        ).alignment = header_alignment
+
     for col in ws_main.columns:
         max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
         ws_main.column_dimensions[col[0].column_letter].width = min(max_length + 4, 70)
@@ -2468,7 +2478,7 @@ def generate_bad_case_extract_report(
         for row_idx, row_data in enumerate(report_rows, start=2):
             values = [
                 row_data["pipeline_name"],
-                row_data["metric_name"],
+                metric_display_name(row_data["metric_name"]),
                 row_data["output_prefix"],
                 row_data["rank"],
                 row_data["severity_score"],

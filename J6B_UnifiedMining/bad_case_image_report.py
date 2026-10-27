@@ -322,7 +322,7 @@ def normalize_header(value: Any) -> str:
 
 def read_cases(sheet: Any, header_map: Mapping[str, int]) -> List[CaseRow]:
     source_col = require_header(header_map, "文件路径")
-    metric_col = require_header(header_map, "指标名称")
+    metric_col = header_map.get("指标Key") or require_header(header_map, "指标名称")
     start_col = require_header(header_map, "开始时间(s)")
     end_col = require_header(header_map, "结束时间(s)")
     severity_col = header_map.get("严重程度得分")

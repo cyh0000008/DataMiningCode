@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from reporting import ensure_xlsx, metric_report_sort_key
+from metric_display_names import metric_display_name
 
 
 DEFAULT_RULE = {
@@ -29,6 +30,7 @@ BAD_CASE_HEADERS = [
     "问题内容",
     "开始时间(s)",
     "结束时间(s)",
+    "指标Key",
 ]
 
 
@@ -171,7 +173,7 @@ def write_bad_case_xlsx(rows: List[Mapping[str, Any]], output_path: Path) -> Non
         for row in rows:
             sheet.append([
                 row.get("category", ""),
-                row.get("metric_name", ""),
+                metric_display_name(str(row.get("metric_name", ""))),
                 row.get("source_path", ""),
                 row.get("date", ""),
                 row.get("time", ""),
@@ -180,6 +182,7 @@ def write_bad_case_xlsx(rows: List[Mapping[str, Any]], output_path: Path) -> Non
                 row.get("message", ""),
                 row.get("start_s", ""),
                 row.get("end_s", ""),
+                row.get("metric_name", ""),
             ])
 
     sheet.freeze_panes = "A2"

@@ -18,6 +18,10 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 - 一个汇总 XLSX 报告，汇总页和明细页都会标注 `指标类型`：CPI 或 MPI
 - `run_manifest.json` 记录本次输入和指标列表
 
+`bad_case_report.xlsx` 的“指标名称”使用与对比报告一致的中文名称，
+另保留“指标Key”列用于追溯和曲线绘图。配置、CSV/JSON 文件名及汇总报告代码名保持不变。
+挖掘汇总报告的“指标名称”右侧新增“中文指标名称”列，原代码名和统计口径保持不变。
+
 ## 结构
 
 - `DataMining.py`：唯一主入口，负责加载配置、发现 H5、加载 filters、生成报告。

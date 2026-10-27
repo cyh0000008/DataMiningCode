@@ -1,5 +1,11 @@
 # MMT Unified Mining
 
+Bad Case extraction reports display Chinese metric names consistent with comparison reports
+in the metric-name column. The existing metric-key column, extraction-rule keys, CSV filenames
+and summary-report identifiers remain unchanged.
+Mining summary reports also include a Chinese metric-name column immediately after the
+original metric-name column; code identifiers and statistics remain unchanged.
+
 ## Vehicle powertrain
 
 Set the required root-level `powertrain_type` in `config.json` for the vehicle being mined:

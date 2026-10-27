@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from metric_utils import MetricResult
+from metric_display_names import metric_display_name
 
 
 CSV_HEADERS = [
@@ -26,7 +27,7 @@ CSV_HEADERS = [
 ]
 
 SKIPPED_HEADERS = ["指标类型", "指标名称", "文件路径", "缺失字段", "缺失信号", "处理结果"]
-SUMMARY_HEADERS = ["指标类型", "指标名称", "总Case之和", "Bad Case之和", "跳过数", "指标值"]
+SUMMARY_HEADERS = ["指标类型", "指标名称", "中文指标名称", "总Case之和", "Bad Case之和", "跳过数", "指标值"]
 DETAIL_HEADERS = ["指标类型", "Bad_Case数据列表", "问题严重程度得分", "问题内容", "问题分析", "分析截图"]
 
 
@@ -130,6 +131,7 @@ class StreamingReportWriter:
             self.summary_sheet.append([
                 summary["category"],
                 metric_name,
+                metric_display_name(metric_name),
                 summary["total_cases"],
                 summary["bad_cases"],
                 summary["skipped_count"],
@@ -289,7 +291,7 @@ def write_summary_sheet(
 ) -> None:
     header_font = Font(bold=True)
     center = Alignment(horizontal="center", vertical="center")
-    headers = ["指标类型", "指标名称", "总Case之和", "Bad Case之和", "跳过数", "指标值"]
+    headers = SUMMARY_HEADERS
     for col, title in enumerate(headers, 1):
         cell = sheet.cell(row=1, column=col, value=title)
         cell.font = header_font
@@ -312,19 +314,20 @@ def write_summary_sheet(
         ]
         sheet.cell(row=row_index, column=1, value=category)
         sheet.cell(row=row_index, column=2, value=metric_name)
-        sheet.cell(row=row_index, column=3, value=total_cases)
-        sheet.cell(row=row_index, column=4, value=bad_cases)
-        sheet.cell(row=row_index, column=5, value=skipped_count)
+        sheet.cell(row=row_index, column=3, value=metric_display_name(metric_name))
+        sheet.cell(row=row_index, column=4, value=total_cases)
+        sheet.cell(row=row_index, column=5, value=bad_cases)
+        sheet.cell(row=row_index, column=6, value=skipped_count)
         sheet.cell(
             row=row_index,
-            column=6,
+            column=7,
             value=(
                 measurement_values_display(measurement_values)
                 if measurement_values or any(item.result_mode == "measurement_mean" for item in results)
                 else metric_value_display(category, total_cases, bad_cases, distance_km)
             ),
         )
-        for col in range(1, 7):
+        for col in range(1, len(SUMMARY_HEADERS) + 1):
             sheet.cell(row=row_index, column=col).alignment = center
         row_index += 1
 
