@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,7 +32,7 @@ from .job_spec import (
 )
 from .paths import AppSettings
 from .progress_parser import parse_line
-from .report_archive import archive_report
+from .report_archive import archive_report, bundle_reports
 
 
 STATUS_QUEUED = "排队中"
@@ -62,6 +64,10 @@ class Job:
     finished_at: Optional[float] = None
     exit_code: Optional[int] = None
     report_path: Optional[Path] = None
+    bad_case_report_path: Optional[Path] = None
+    bundle_options: Optional[Dict[str, str]] = None
+    bundle_path: Optional[Path] = None
+    bundle_error: str = ""
     pending_compare: Optional[Dict[str, Any]] = None
     report_archive: Optional[Dict[str, str]] = None
     archived_report_path: Optional[Path] = None
@@ -137,6 +143,7 @@ class JobManager(QObject):
             JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare, report_archive,
             pending_sync=spec.lcc_sync_check,
             sync_status="等待报告完成" if spec.lcc_sync_check else "未启用",
+            bundle_options=self._build_bundle_options(temp_config, spec.vehicle, spec.software_version),
         )
 
     def submit_mmt(
@@ -174,7 +181,10 @@ class JobManager(QObject):
             spec.software_version,
         )
         return self._submit(
-            JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare, report_archive
+            JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare, report_archive,
+            bundle_options=None if spec.dry_run else self._build_bundle_options(
+                temp_config, spec.vehicle, spec.software_version,
+            ),
         )
 
     def submit_compare(
@@ -273,6 +283,12 @@ class JobManager(QObject):
         return {"python_exe": compare_python, "compare_dir": compare_dir, "spec": compare_spec}
 
     @staticmethod
+    def _build_bundle_options(config_path: Path, vehicle: str, version: str) -> Dict[str, str]:
+        with config_path.open(encoding="utf-8") as stream:
+            config = json.load(stream)
+        return {"output_dir": config["output_dir"], "vehicle": vehicle, "version": version}
+
+    @staticmethod
     def _build_report_archive(
         archive_dir: str,
         target_vehicle: str,
@@ -301,6 +317,7 @@ class JobManager(QObject):
         pending_sync: bool = False,
         sync_status: str = "",
         sync_source_job_id: Optional[str] = None,
+        bundle_options: Optional[Dict[str, str]] = None,
     ) -> str:
         job_id = uuid.uuid4().hex
         job = Job(
@@ -315,6 +332,7 @@ class JobManager(QObject):
             pending_sync=pending_sync,
             sync_status=sync_status,
             sync_source_job_id=sync_source_job_id,
+            bundle_options=bundle_options,
         )
         self._jobs[job_id] = job
         self._queue.append(job_id)
@@ -386,6 +404,10 @@ class JobManager(QObject):
                 job.sync_status = "是" if update.sync_has_large_delay else (
                     "否" if update.sync_matched_edges else "否（无有效样本）"
                 )
+                if update.sync_failed_files:
+                    job.sync_status = (
+                        "是（结果不完整）" if update.sync_has_large_delay else "检查不完整"
+                    )
                 job.sync_detail = update.sync_detail or ""
                 captured_plot = Path(update.sync_plot_path)
                 job.sync_plot_path = (
@@ -408,6 +430,12 @@ class JobManager(QObject):
                 job.report_path = (
                     captured_path
                     if captured_path.is_absolute()
+                    else (job.cwd / captured_path).resolve()
+                )
+            if update.bad_case_report_path:
+                captured_path = Path(update.bad_case_report_path)
+                job.bad_case_report_path = (
+                    captured_path if captured_path.is_absolute()
                     else (job.cwd / captured_path).resolve()
                 )
             self.job_log.emit(job_id, line)
@@ -448,6 +476,11 @@ class JobManager(QObject):
         self.job_finished.emit(job_id)
         if job.status == STATUS_SUCCESS:
             compare_id = self._trigger_auto_compare(job) if job.pending_compare is not None else None
+            if job.bundle_options is not None and compare_id is None:
+                if job.pending_compare is None:
+                    self._bundle_reports(job)
+                else:
+                    self._bundle_failed(job, "自动对比未成功提交，未生成完整报告 ZIP。")
             if job.pending_sync and compare_id is None:
                 self._submit_sync(job)
         elif job.pending_sync:
@@ -483,6 +516,13 @@ class JobManager(QObject):
         if source is None:
             return
         if job.kind == JOB_KIND_COMPARE:
+            if source.bundle_options is not None:
+                if job.status == STATUS_SUCCESS:
+                    self._bundle_reports(source, job)
+                else:
+                    self._bundle_failed(source, "自动对比失败或取消，未生成完整报告 ZIP。")
+            if not source.pending_sync:
+                return
             if job.status == STATUS_CANCELED:
                 source.pending_sync = False
                 source.sync_status = "未完成"
@@ -500,6 +540,44 @@ class JobManager(QObject):
                 job.sync_plot_path = None
                 self.job_updated.emit(job.id)
             self.job_updated.emit(source.id)
+
+    def _bundle_failed(self, source: Job, detail: str) -> None:
+        source.bundle_error = detail
+        message = f"[报告打包] 失败：{detail}"
+        source.log_lines.append(message)
+        self.job_log.emit(source.id, message)
+        self.job_updated.emit(source.id)
+
+    def _bundle_reports(self, source: Job, comparison: Optional[Job] = None) -> None:
+        options = source.bundle_options
+        if options is None or source.bundle_path is not None:
+            return
+        reports: List[Path] = []
+        if comparison is not None:
+            if comparison.report_path is None:
+                self._bundle_failed(source, "未捕获本次对比报告路径。")
+                return
+            reports.append(comparison.report_path)
+        if source.bad_case_report_path is not None:
+            reports.append(source.bad_case_report_path)
+        else:
+            message = "[报告打包] 本次未生成 Bad Case Excel（可能已禁用提取），不加入 ZIP。"
+            source.log_lines.append(message)
+            self.job_log.emit(source.id, message)
+        try:
+            source.bundle_path = bundle_reports(
+                reports, Path(options["output_dir"]), options["vehicle"], options["version"],
+            )
+        except (OSError, ValueError, RuntimeError, zipfile.LargeZipFile) as exc:
+            self._bundle_failed(source, str(exc))
+            return
+        source.bundle_error = ""
+        message = f"[报告打包] 已生成：{source.bundle_path}"
+        if comparison is None:
+            message += "（未启用自动对比，仅包含本次 Bad Case Excel）"
+        source.log_lines.append(message)
+        self.job_log.emit(source.id, message)
+        self.job_updated.emit(source.id)
 
     def _archive_report(self, job: Job) -> None:
         options = job.report_archive
@@ -550,7 +628,7 @@ class JobManager(QObject):
         try:
             return self.submit_compare(
                 pending["python_exe"], pending["compare_dir"], spec,
-                sync_source_job_id=job.id if job.pending_sync else None,
+                sync_source_job_id=job.id,
             )
         except Exception as exc:  # noqa: BLE001 - surface failure into the source job's log
             error_message = f"[自动对比] 提交对比报告任务失败：{exc}"

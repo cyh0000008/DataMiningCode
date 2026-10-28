@@ -41,6 +41,8 @@ else:
              for metric in load_metric_modules(pipeline)}
 assert "control_shake_count" not in names, names
 assert "follow_stop_fluct" not in names, names
+assert "abs_activation_count" not in names, names
+assert "acc_exit_after_abs" in names, names
 assert "follow_stop_min_jerk" in names, names
 assert "slope_no_frnt_vel_fluct" in names, names
 print("Loaded metrics:", len(names))

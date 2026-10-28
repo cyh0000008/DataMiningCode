@@ -103,7 +103,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
         if max_jerk_val is not None:
             duration_str = f"第{idx+1}片段，最大的jerk为{max_jerk_val}，max_jerk_time_ms:{max_jerk_idx:.3f}"
-            if max_jerk_val > 2.5 or max_jerk_val < 1.0:
+            if max_jerk_val > 2.5:
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(max_jerk_val))
         else:
@@ -122,14 +122,10 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     return (check_result, time_info_list, case_statistics)
 
 def _cal_severity_score(max_jerk_val: Optional[float]) -> float:
-    C_min_acc = 1
     C_max_acc = 2.5
 
     C_cal_base = 1  #严重程度得分100分的越限基准
-    if max_jerk_val < C_min_acc:
-        exceed_amount = C_min_acc - max_jerk_val
-    else:
-        exceed_amount = max_jerk_val - C_max_acc
+    exceed_amount = max(max_jerk_val - C_max_acc, 0.0)
     return abs(exceed_amount/C_cal_base)*100.0
 
 def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:

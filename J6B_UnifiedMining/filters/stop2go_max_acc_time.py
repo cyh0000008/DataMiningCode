@@ -13,7 +13,7 @@ class Stop2goMaxAccTimeMetric(BaseMetric):
     required_fields = ("time_s", "acceleration_total")
     scene = "stop2go"
     measure = "max_acc_time"
-    lower = 1.0
+    lower = None
     upper = 4.0
     severity_base = 2.0
     bad_when_missing = False

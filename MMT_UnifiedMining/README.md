@@ -1,5 +1,9 @@
 # MMT Unified Mining
 
+The standalone ABS activation metric (`abs_activation_count`) has been removed
+from mining and reporting. ABS-correlated ACC exit (`acc_exit_after_abs`) and
+its required ABS signal remain enabled.
+
 Bad Case extraction reports display Chinese metric names consistent with comparison reports
 in the metric-name column. The existing metric-key column, extraction-rule keys, CSV filenames
 and summary-report identifiers remain unchanged.
@@ -11,11 +15,33 @@ outputs, summary statistics and comparison reports remain unchanged.
 
 ## Curve and stop-and-go TTC gate
 
+Green-light start comfort jerk has no minimum: only maximum jerk >2.5 m/s3
+is a Bad Case. Values <=2.5 m/s3 have zero severity; scene selection and
+jerk calculation are unchanged.
+
 The three curve-control CPI metrics and four stop-and-go CPI metrics use a
 4.5 s TTC scene-selection threshold on every frame (previously 3.5 s).
 An available positive TTC below 4.5 s breaks the candidate segment; equality
 is allowed. Existing missing/zero-TTC handling and all other scene conditions
 remain unchanged. This does not change jerk or acceleration build-up thresholds.
+
+## Confirmed steady slope scenes
+
+All three slope CPI metrics share `slope_scene_utils.find_steady_slope_segments`.
+Retain the normal NP/no-front/moving/slope/curvature-limit/red-light/data gates,
+but require a finite positive UNP SetSpeed constant within `1e-6` of the candidate's
+first value. Topic `cruise_velocity` and chassis `vehicle_speed_average` are m/s:
+speed must remain within SetSpeed +/- `2/3.6 m/s` for a full second to enter.
+The confirming sample starts the measured segment; the preceding dwell is excluded.
+Every measured segment must last at least 5 seconds (time-based, not frame-count-based).
+
+Once entered, speed outside the entry band is still included until an original
+base condition fails or SetSpeed changes. Then terminate immediately and require
+a fresh one-second dwell. Remove the old SetSpeed-crossing requirement and
+20-frame slope-recovery exception. All three measurements use the whole confirmed
+segment, without additional dashboard-speed cropping. Their existing formulas,
+units and Bad Case thresholds remain unchanged (including dashboard full-range
+speed fluctuation). Preserve primary-file ownership across concatenated context.
 
 ## Stable follow-stop distance
 
@@ -89,14 +115,14 @@ Powertrain-specific criteria use the selected type for both Bad Case checks and 
 |---|---:|---:|---:|
 | Stop-and-go maximum jerk | <= 4 m/s3 | <= 3.5 m/s3 | <= 3.5 m/s3 |
 | Initial speed build-up time | 1.0-3.2 s | 1.0-2.8 s | 1.0-2.8 s |
-| Stop-and-go acceleration build-up time | 1.0-4.0 s | 1.0-3.5 s | 1.0-3.5 s |
+| Stop-and-go acceleration build-up time (no minimum) | <=4.0 s | <=3.5 s | <=3.5 s |
 | Slope steady-speed fluctuation | <= 0.6 m/s | <= 0.3 m/s | <= 0.3 m/s |
 | Follow-start response latency | <= 2.8 s | <= 2.5 s | <= 2.5 s |
 | Red-light stop comfort jerk | >= -2.3 m/s3 | >= -2.0 m/s3 | >= -2.0 m/s3 |
 | Green-light start response latency | <= 1.7 s | <= 1.5 s | <= 1.5 s |
 | ACC start jerkiness scene window | 3 s | 1 s | 1 s |
 
-Other updated template criteria include stop-and-go maximum acceleration (1.0-2.7 m/s2), follow-stop distance (3-4 m), follow-stop TTC (>= 4.5 s), follow-start comfort jerk (1.0-1.5 m/s3), red-light stop distance (1.5-3.5 m), and green-light maximum acceleration (1.0-2.3 m/s2). Green-light response latency and maximum acceleration are separate metrics: each has its own Bad Case count and severity score, based only on its own threshold.
+Other updated template criteria include stop-and-go maximum acceleration (1.0-2.7 m/s2), follow-stop distance (3-4 m), follow-stop TTC (>= 4.5 s), follow-start comfort jerk (<=1.5 m/s3, no minimum), red-light stop distance (1.5-3.5 m), and green-light maximum acceleration (1.0-2.3 m/s2). Green-light response latency and maximum acceleration are separate metrics: each has its own Bad Case count and severity score, based only on its own threshold.
 
 ## Uninterfered driving acceleration
 

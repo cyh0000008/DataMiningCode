@@ -99,25 +99,20 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
 
 def _check_max_jerk_valid(result_values: Optional[Dict]) -> bool:
     C_jerk_upper_bound = 1.5
-    C_jerk_lower_bound = 1.0
 
-    if result_values["max_jerk"] >= C_jerk_lower_bound and result_values["max_jerk"] <= C_jerk_upper_bound:
+    if result_values["max_jerk"] <= C_jerk_upper_bound:
         return True
     else:
         return False
     
 def _cal_severity_score(result_values: Optional[Dict]) -> float:
     C_jerk_upper_bound = 1.5
-    C_jerk_lower_bound = 1.0
 
-    if result_values["max_jerk"] >= C_jerk_lower_bound and result_values["max_jerk"] <= C_jerk_upper_bound:
+    if result_values["max_jerk"] <= C_jerk_upper_bound:
         return 0.0
     else:
         C_cal_base = 1  #严重程度得分100分的越限基准
-        if result_values["max_jerk"] < C_jerk_lower_bound:
-            exceed_amount = C_jerk_lower_bound - result_values["max_jerk"]
-        else:
-            exceed_amount = result_values["max_jerk"] - C_jerk_upper_bound
+        exceed_amount = result_values["max_jerk"] - C_jerk_upper_bound
         return abs(exceed_amount/C_cal_base)*100.0
 
 # ------------------------------ 辅助函数：获取单帧风险判定参数 ------------------------------

@@ -18,7 +18,7 @@ import numpy as np
 from metric_utils import curvature_segments, slope_no_front_segments, find_scene_segments
 from signal_preprocessor import SignalFrame
 
-t = np.round(np.arange(0, 12.01, 0.1), 6)
+t = np.round(np.arange(0, 14.01, 0.1), 6)
 fields = {
     "time_s": t, "acc_active_flag": np.ones(t.size, dtype=bool),
     "moving_flag": np.ones(t.size, dtype=bool),
@@ -39,14 +39,17 @@ for function, changes in (
         ("front_valid", True), ("curv_speed_limit", 9), ("ego_speed_mps", 14),
     )),
 ):
-    assert [(s.start, s.end) for s in function(frame)] == [(0, 120)]
+    entry_offset = 10 if function is slope_no_front_segments else 0
+    assert [(s.start, s.end) for s in function(frame)] == [(entry_offset, 140)]
     for field, value in changes:
         for count in (1, 2, 4):
             changed = deepcopy(frame)
-            changed.fields[field][60:60 + count] = value
+            changed.fields[field][70:70 + count] = value
             segments = function(changed)
-            assert [(s.start, s.end) for s in segments] == [(0, 59), (60 + count, 120)], (field, count, segments)
-            assert all(not (s.start <= 60 <= s.end) for s in segments)
+            assert [(s.start, s.end) for s in segments] == [
+                (entry_offset, 69), (70 + count + entry_offset, 140)
+            ], (field, count, segments)
+            assert all(not (s.start <= 70 <= s.end) for s in segments)
     # Individually too-short halves must not qualify through a one-frame gap.
     short = deepcopy(frame)
     short.fields = {key: values[:81].copy() for key, values in fields.items()}
@@ -57,7 +60,7 @@ for function, changes in (
 for value in (4.5, 5.0, np.inf, np.nan):
     changed = deepcopy(frame)
     changed.fields["front_ttc"][:] = value
-    assert [(s.start, s.end) for s in curvature_segments(changed)] == [(0, 120)]
+    assert [(s.start, s.end) for s in curvature_segments(changed)] == [(0, 140)]
 for value in (3.5, 4.0, 4.49):
     changed = deepcopy(frame)
     changed.fields["front_ttc"][:] = value
@@ -66,7 +69,7 @@ for count, expected in ((49, False), (50, True)):
     changed = deepcopy(frame)
     changed.fields = {key: values[:count].copy() for key, values in fields.items()}
     assert bool(curvature_segments(changed)) == expected
-for count, expected in ((50, False), (51, True)):
+for count, expected in ((60, False), (61, True)):
     changed = deepcopy(frame)
     changed.fields = {key: values[:count].copy() for key, values in fields.items()}
     assert bool(slope_no_front_segments(changed)) == expected
@@ -78,14 +81,15 @@ for qualified, expected in ((4, False), (5, True)):
 
 # All six CPI metrics use the same strict scene selection through the dispatcher.
 changed = deepcopy(frame)
-changed.fields["acc_active_flag"][60] = False
+changed.fields["acc_active_flag"][70] = False
 for name in (
     "curvature_min_acc", "curvature_min_jerk", "curvature_min_speed",
     "slope_no_frnt_acc", "slope_no_frnt_jerk", "slope_no_frnt_vel_fluct",
 ):
     metric = importlib.import_module("filters." + name).create_metric()
     segments = find_scene_segments(changed, metric.scene)
-    assert [(s.start, s.end) for s in segments] == [(0, 59), (61, 120)], name
+    offset = 10 if name.startswith("slope_") else 0
+    assert [(s.start, s.end) for s in segments] == [(offset, 69), (71 + offset, 140)], name
 '''],
             cwd=ROOT / "J6B_UnifiedMining",
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},

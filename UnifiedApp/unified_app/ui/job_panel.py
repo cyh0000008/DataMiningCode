@@ -125,7 +125,10 @@ class JobPanel(QWidget):
         if job is None or row is None:
             return
 
-        status_item = QTableWidgetItem(job.status)
+        status_item = QTableWidgetItem(
+            job.status + ("（打包失败）" if job.bundle_error else "")
+        )
+        status_item.setToolTip(job.bundle_error or (str(job.bundle_path) if job.bundle_path else ""))
         color = STATUS_COLORS.get(job.status)
         if color:
             status_item.setForeground(Qt.GlobalColor.black)
@@ -147,7 +150,7 @@ class JobPanel(QWidget):
                 job.sync_status or ("未完成" if job.status in TERMINAL_STATUSES else "待检查")
             )
             sync_item.setToolTip(job.sync_detail or "匹配开启/退出边沿，任一绝对时间差>200 ms即为是。")
-            if job.sync_status == "是":
+            if job.sync_status.startswith("是"):
                 sync_item.setBackground(_hex_to_color("#d93025", light=True))
             self.table.setItem(row, COL_SYNC, sync_item)
             plot_link = self.table.cellWidget(row, COL_SYNC_PLOT)

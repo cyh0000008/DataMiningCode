@@ -1,9 +1,10 @@
-"""Copy a mining XLSX report to an optional user-managed archive folder."""
+"""Archive mining XLSX reports and bundle current-run deliverables as ZIP."""
 
 from __future__ import annotations
 
 import re
 import shutil
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -46,6 +47,36 @@ def archive_report(
     stem = build_archive_stem(vehicle, date_text, version)
     destination = _next_available_path(destination_dir, stem, source.suffix)
     shutil.copy2(source, destination)
+    return destination
+
+
+def bundle_reports(
+    reports: list[Path], output_dir: Path, vehicle: str, version: str,
+) -> Path:
+    if not reports:
+        raise ValueError("没有可打包的对比报告或 Bad Case Excel")
+    parts = [_sanitize_filename_part(value) for value in (vehicle, version)]
+    if any(not part for part in parts):
+        raise ValueError("报告打包需要填写当前报告车型和软件版本")
+    for report in reports:
+        if not report.is_file():
+            raise FileNotFoundError(f"待打包报告不存在：{report}")
+        if report.suffix.lower() != ".xlsx":
+            raise ValueError(f"待打包报告不是 XLSX 文件：{report}")
+    if len({report.name.casefold() for report in reports}) != len(reports):
+        raise ValueError("待打包报告文件名重复，无法放入同一 ZIP")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stem = "_".join([*parts, datetime.now().strftime("%Y%m%d_%H%M%S")])
+    destination = _next_available_path(output_dir, stem, ".zip")
+    with destination.open("xb") as stream:
+        try:
+            with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for report in reports:
+                    archive.write(report, arcname=report.name)
+        except (OSError, ValueError, RuntimeError, zipfile.LargeZipFile):
+            stream.close()
+            destination.unlink()
+            raise
     return destination
 
 

@@ -467,7 +467,7 @@ def draw_case_plot(frame: SignalFrame, case: CaseRow, output_path: Path) -> None
     for panel in panels:
         panel.markers = markers
     fonts = FontSet()
-    height = max(PLOT_HEIGHT, 180 + len(panels) * 165)
+    height = max(PLOT_HEIGHT, 180 + len(panels) * 240)
     image = Image.new("RGB", (PLOT_WIDTH, height), (246, 248, 252))
     draw = ImageDraw.Draw(image)
     draw_plot_header(draw, fonts, case, window_start, window_end)
@@ -663,8 +663,8 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         speed_lines.append(PlotLine("SetSpeed", frame.col("set_speed").astype(float)[mask], (107, 114, 128), step=True))
     if frame.has("curv_speed_limit") and np.any(np.isfinite(frame.col("curv_speed_limit")[mask])):
         speed_lines.append(PlotLine("弯道限速", frame.col("curv_speed_limit").astype(float)[mask] * 3.6, (220, 38, 38), step=True))
-    if speed_lines:
-        panels.append(PlotPanel("车速 / 设速", "kph", speed_lines))
+    for line in speed_lines:
+        panels.append(PlotPanel("车速：" + line.label, "km/h", [line]))
 
     if wants_front_panel(metric_name):
         front_lines = signal_lines(
@@ -676,8 +676,9 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
                 ("前车速度", "front_velocity_abs", 3.6, (124, 58, 237), True),
             ],
         )
-        if front_lines:
-            panels.append(PlotPanel("前车信号", "m / s / kph", front_lines))
+        for line in front_lines:
+            unit = {"前车距离": "m", "TTC": "s", "前车速度": "km/h"}[line.label]
+            panels.append(PlotPanel("前车：" + line.label, unit, [line]))
 
     if wants_torque_panel(metric_name):
         torque_lines = signal_lines(
@@ -690,19 +691,22 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
                 ("实车制动扭矩", "actual_brake_torque", 1.0, (249, 115, 22), False),
             ],
         )
-        if torque_lines:
-            panels.append(PlotPanel("驱动 / 制动扭矩", "Nm", torque_lines))
+        for line in torque_lines:
+            panels.append(PlotPanel("扭矩：" + line.label, "Nm", [line]))
 
     road_lines = signal_lines(
         frame,
         mask,
         [
             ("坡度", "slope_deg", 1.0, (217, 119, 6), False),
-            ("曲率", "curvature", 1000.0, (190, 24, 93), False),
+            ("曲率", "curvature", 1.0, (190, 24, 93), False),
         ],
     )
-    if wants_road_panel(metric_name) and road_lines:
-        panels.append(PlotPanel("道路信号", "deg / curvature*1000", road_lines))
+    if wants_road_panel(metric_name):
+        for line in road_lines:
+            panels.append(PlotPanel(
+                "道路：" + line.label, "deg" if line.label == "坡度" else "1/m", [line],
+            ))
 
     state_lines = signal_lines(
         frame,
@@ -717,8 +721,8 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
             ("仲裁状态", "acc_request_state", 1.0, (20, 184, 166), True),
         ],
     )
-    if state_lines:
-        panels.append(PlotPanel("状态信号", "enum", state_lines))
+    for line in state_lines:
+        panels.append(PlotPanel("状态：" + line.label, "enum", [line]))
 
     if "rollback" in metric:
         for title, unit, specs in (
@@ -738,8 +742,11 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
             ]),
         ):
             lines = signal_lines(frame, mask, specs)
-            if lines:
-                panels.append(PlotPanel(title, unit, lines))
+            for line in lines:
+                line_unit = unit
+                if unit == "raw / kph":
+                    line_unit = "km/h" if line.label == "非驱动轮车速" else "raw"
+                panels.append(PlotPanel(title + "：" + line.label, line_unit, [line]))
 
     return prioritize_panels(metric_name, panels)
 
@@ -764,13 +771,13 @@ def wants_road_panel(metric_name: str) -> bool:
 def prioritize_panels(metric_name: str, panels: List[PlotPanel]) -> List[PlotPanel]:
     metric = metric_name.lower()
     if "curv" in metric:
-        order = ["车速", "道路", "加速度", "前车", "状态", "驱动"]
+        order = ["车速", "道路", "加速度", "前车", "状态", "扭矩"]
     elif "slope" in metric:
-        order = ["加速度", "车速", "道路", "状态", "前车", "驱动"]
+        order = ["加速度", "车速", "道路", "状态", "前车", "扭矩"]
     elif any(token in metric for token in ("brake", "shake", "jerk", "torque", "顿挫", "重制动", "点刹")):
-        order = ["加速度", "驱动", "车速", "前车", "状态", "道路"]
+        order = ["加速度", "扭矩", "车速", "前车", "状态", "道路"]
     else:
-        order = ["加速度", "车速", "前车", "驱动", "状态", "道路"]
+        order = ["加速度", "车速", "前车", "扭矩", "状态", "道路"]
 
     def rank(panel: PlotPanel) -> int:
         for index, token in enumerate(order):
@@ -795,8 +802,6 @@ def signal_lines(
         finite = sliced[np.isfinite(sliced)]
         if finite.size == 0:
             continue
-        if field_name in {"front_ttc", "curv_speed_limit"}:
-            sliced = np.where(np.isfinite(sliced), np.minimum(sliced, 120.0), np.nan)
         lines.append(PlotLine(label, sliced, color, step))
     return lines
 
@@ -832,7 +837,8 @@ def draw_panel(
         y = plot_y1 - (plot_y1 - plot_y0) * index / 3
         value = ymin + (ymax - ymin) * index / 3
         draw.line((plot_x0, y, plot_x1, y), fill=(238, 242, 248))
-        draw.text((x0 + 8, y - 7), format_tick(value), fill=(75, 85, 99), font=fonts.small)
+        draw.text((x0 + 8, y - 7), format_tick(value, (ymax - ymin) / 3),
+                  fill=(75, 85, 99), font=fonts.small)
     for index in range(5):
         x = plot_x0 + (plot_x1 - plot_x0) * index / 4
         time_value = float(t[0]) + (float(t[-1]) - float(t[0])) * index / 4
@@ -925,13 +931,18 @@ def y_range(lines: Sequence[PlotLine]) -> Tuple[float, float]:
     low = float(np.min(values))
     high = float(np.max(values))
     if math.isclose(low, high):
-        pad = max(abs(low) * 0.1, 1.0)
+        pad = max(abs(low) * 0.1, 1e-6) if low else 1.0
         return low - pad, high + pad
     span = high - low
     return low - span * 0.12, high + span * 0.12
 
 
-def format_tick(value: float) -> str:
+def format_tick(value: float, step: Optional[float] = None) -> str:
+    if step is not None and 0 < step < 1:
+        decimals = max(0, 1 - math.floor(math.log10(step)))
+        return ("%.*f" % (decimals, value)) if decimals <= 6 else "%.3g" % value
+    if 0 < abs(value) < 0.01:
+        return "%.3g" % value
     if abs(value) >= 100:
         return "%.0f" % value
     if abs(value) >= 10:

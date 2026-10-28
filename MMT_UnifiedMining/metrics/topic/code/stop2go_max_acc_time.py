@@ -116,28 +116,21 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     return (check_result, jerk_values, case_statistics)
     
 def _check_max_accel_time_valid(result_values: Optional[Dict], C_max_time: float) -> bool:
-    C_min_time = 1.0
-
     acc_build_time = result_values["acc_build_time"]
 
-    if acc_build_time <= C_max_time and acc_build_time >= C_min_time:
+    if acc_build_time <= C_max_time:
         return True
     else:
         return False
     
 def _cal_severity_score(result_values: Optional[Dict], C_max_time: float) -> float:
-    C_min_time = 1.0
-
     acc_build_time = result_values["acc_build_time"]
 
-    if acc_build_time <= C_max_time and acc_build_time >= C_min_time:
+    if acc_build_time <= C_max_time:
         return 0.0
     else:
         C_cal_base = 2  #严重程度得分100分的越限基准
-        if acc_build_time < C_min_time:
-            exceed_amount = C_min_time - acc_build_time
-        else:
-            exceed_amount = acc_build_time - C_max_time
+        exceed_amount = acc_build_time - C_max_time
         return abs(exceed_amount/C_cal_base)*100.0
 
 # ------------------------------ 辅助函数：获取单帧风险判定参数 ------------------------------

@@ -12,7 +12,7 @@ class FollowStartJerkMetric(BaseMetric):
     required_fields = ("time_s", "acceleration_total")
     scene = "follow_start"
     measure = "max_jerk"
-    lower = 1.0
+    lower = None
     upper = 2.0
     severity_base = 1.0
     bad_when_missing = False

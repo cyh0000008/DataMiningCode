@@ -41,6 +41,8 @@ _ERROR_MARKERS = ("Traceback (most recent call last)", "执行失败：")
 
 _J6B_REPORT_PATH_RE = re.compile(r"Report written:\s*(.+)\s*$")
 _MMT_REPORT_PATH_RE = re.compile(r"统计报告已生成[：:]\s*(.+)\s*$")
+_BAD_CASE_PATH_RE = re.compile(r"^(?:Bad case report written:|Bad Case 提取报告[：:])\s*(.+)\s*$")
+_COMPARE_REPORT_PATH_RE = re.compile(r"^已生成[：:]\s*(.+)\s*$")
 
 
 @dataclass
@@ -51,10 +53,12 @@ class ProgressUpdate:
     done_marker: bool = False
     error_marker: bool = False
     report_path: Optional[str] = None
+    bad_case_report_path: Optional[str] = None
     sync_has_large_delay: Optional[bool] = None
     sync_detail: Optional[str] = None
     sync_plot_path: Optional[str] = None
     sync_matched_edges: Optional[int] = None
+    sync_failed_files: int = 0
 
 
 def parse_line(kind: str, line: str) -> ProgressUpdate:
@@ -88,12 +92,15 @@ def parse_line(kind: str, line: str) -> ProgressUpdate:
                 or not isinstance(payload.get("detail"), str)
                 or not isinstance(payload.get("plot_path"), str)
                 or not payload["plot_path"]
+                or type(payload.get("failed_files", 0)) is not int
+                or payload.get("failed_files", 0) < 0
             ):
                 raise ValueError("Invalid LCC_SYNC_RESULT payload")
             update.sync_has_large_delay = payload["has_large_delay"]
             update.sync_matched_edges = payload["matched_edges"]
             update.sync_detail = payload["detail"]
             update.sync_plot_path = payload["plot_path"]
+            update.sync_failed_files = payload.get("failed_files", 0)
         report_match = _J6B_REPORT_PATH_RE.search(line)
         if report_match:
             update.report_path = report_match.group(1).strip()
@@ -101,6 +108,15 @@ def parse_line(kind: str, line: str) -> ProgressUpdate:
         report_match = _MMT_REPORT_PATH_RE.search(line)
         if report_match:
             update.report_path = report_match.group(1).strip()
+    elif kind == "compare":
+        report_match = _COMPARE_REPORT_PATH_RE.search(line)
+        if report_match:
+            update.report_path = report_match.group(1).strip()
+
+    if kind in ("j6b", "mmt"):
+        bad_case_match = _BAD_CASE_PATH_RE.search(line)
+        if bad_case_match:
+            update.bad_case_report_path = bad_case_match.group(1).strip()
 
     if any(marker in line for marker in _ERROR_MARKERS):
         update.error_marker = True

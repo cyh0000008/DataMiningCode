@@ -7,7 +7,7 @@ import math
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -48,6 +48,8 @@ class FileSignals:
     bus_value: np.ndarray
     ethernet_time: np.ndarray
     ethernet_raw_value: np.ndarray
+    bus_signal_path: str = ""
+    ethernet_signal_path: str = ""
 
 
 @dataclass
@@ -83,6 +85,7 @@ class SyncStats:
     near_example: Optional[EdgeMatch]
     delayed_example: Optional[EdgeMatch]
     file_signals: Dict[Path, FileSignals]
+    read_errors: List[Dict[str, str]] = field(default_factory=list)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -171,11 +174,21 @@ def run_check(
     comparable_points = 0
     mismatch_points = 0
     used_files = 0
+    read_errors: List[Dict[str, str]] = []
+    reported_paths = set()
 
     for file_index, h5_file in enumerate(h5_files, 1):
         file_start_time = time.perf_counter()
         log(f"[{file_index}/{len(h5_files)}] 读取文件：{h5_file.name}")
-        signals = read_file_signals(h5_file)
+        try:
+            signals = read_file_signals(h5_file)
+        except (OSError, RuntimeError, ValueError) as exc:
+            skipped_files += 1
+            read_errors.append({
+                "file_path": str(h5_file), "error_type": type(exc).__name__, "error": str(exc),
+            })
+            log(f"  读取失败，继续后续文件：{h5_file}；{type(exc).__name__}: {exc}")
+            continue
         read_duration_s = time.perf_counter() - file_start_time
         if signals is None:
             skipped_files += 1
@@ -183,6 +196,10 @@ def run_check(
             continue
         file_signals[h5_file] = signals
         used_files += 1
+        paths = (signals.bus_signal_path, signals.ethernet_signal_path)
+        if paths not in reported_paths:
+            log(f"  使用信号：总线={paths[0]}；ETH={paths[1]}")
+            reported_paths.add(paths)
 
         start_diffs.append(float(signals.ethernet_time[0] - signals.bus_time[0]))
         end_diffs.append(float(signals.ethernet_time[-1] - signals.bus_time[-1]))
@@ -274,6 +291,7 @@ def run_check(
         near_example=near_example,
         delayed_example=delayed_example,
         file_signals=file_signals,
+        read_errors=read_errors,
     )
 
 
@@ -294,7 +312,9 @@ def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict
     )
     max_abs_lag_s = max((abs(match.lag_s) for match in stats.matches), default=None)
     exceeded_count = sum(exceeds_delay_threshold(match) for match in stats.matches)
-    if not stats.used_files:
+    if not stats.used_files and stats.read_errors:
+        detail = "无有效样本：存在文件读取失败，不能判断整体同步情况"
+    elif not stats.used_files:
         detail = "无有效样本：全部文件缺少所需信号或时间戳"
     elif not stats.matches:
         detail = "无有效样本：未找到可匹配的开启/退出边沿"
@@ -304,6 +324,8 @@ def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict
             f"最大绝对时间差 {max_abs_lag_s * 1000:.3f} ms"
         )
     detail += f"；文件 {stats.total_files}，有效 {stats.used_files}，跳过 {stats.skipped_files}"
+    if stats.read_errors:
+        detail += f"；读取失败 {len(stats.read_errors)} 个，结果不完整，详见 JSON 和检查日志"
     plot_start = time.perf_counter()
     draw_png(stats)
     log(f"LCC同步结果图生成完成，用时 {time.perf_counter() - plot_start:.2f}秒")
@@ -314,6 +336,8 @@ def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict
         "exceeded_edges": exceeded_count,
         "max_abs_lag_ms": max_abs_lag_s * 1000 if max_abs_lag_s is not None else None,
         "detail": detail,
+        "failed_files": len(stats.read_errors),
+        "read_errors": stats.read_errors,
         "plot_path": str(plot_path),
         "matches": [
             {"file_path": str(match.file_path), "state": match.state,
@@ -324,7 +348,7 @@ def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict
     }
     with (output_dir / "lcc_activation_sync.json").open("w", encoding="utf-8") as stream:
         json.dump(result, stream, ensure_ascii=False, indent=2)
-    summary = {key: value for key, value in result.items() if key != "matches"}
+    summary = {key: value for key, value in result.items() if key not in ("matches", "read_errors")}
     print("LCC_SYNC_RESULT: " + json.dumps(summary, ensure_ascii=False), flush=True)
     return result
 
@@ -336,15 +360,21 @@ def collect_h5_files(input_dir: Path) -> List[Path]:
 
 def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
     with h5py.File(h5_file, "r") as h5:
+        roots = signal_roots(h5)
+        bus_candidates = expand_candidates(roots, BUS_SIGNAL_CANDIDATES)
+        ethernet_candidates = expand_candidates(roots, ETHERNET_SIGNAL_CANDIDATES)
         discovered_paths = None
         if not all(
             any(path in h5 for path in candidates)
-            for candidates in (BUS_SIGNAL_CANDIDATES, ETHERNET_SIGNAL_CANDIDATES)
+            for candidates in (bus_candidates, ethernet_candidates)
         ):
-            discovered_paths = discover_signal_paths(h5, ("ILCCC_Act", "Debug_uint_Reserved_11"))
+            discovered_paths = discover_signal_paths(
+                h5, ("ILCCC_Act", "ILCCC_Act_1AX", "ILCCC_Act1_1AX",
+                     "LCCC_Act", "Debug_uint_Reserved_11"),
+            )
         bus_path = find_signal_path(
             h5,
-            BUS_SIGNAL_CANDIDATES,
+            bus_candidates,
             signal_name="ILCCC_Act",
             required_fragments=("0x194", "ACC_AxlTrqReq"),
             preferred_value_sets=({0, 1},),
@@ -352,7 +382,7 @@ def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
         )
         ethernet_path = find_signal_path(
             h5,
-            ETHERNET_SIGNAL_CANDIDATES,
+            ethernet_candidates,
             signal_name="Debug_uint_Reserved_11",
             required_fragments=("0x3D9", "Reserved_10"),
             preferred_value_sets=({0, 1}, {4, 5}),
@@ -378,28 +408,52 @@ def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
         bus_value=bus_value,
         ethernet_time=ethernet_time,
         ethernet_raw_value=ethernet_raw_value,
+        bus_signal_path=bus_path,
+        ethernet_signal_path=ethernet_path,
     )
 
 
+def signal_roots(h5: h5py.File) -> List[str]:
+    roots = [""]
+    names = list(h5.keys())
+    if len(names) == 1 and not names[0].lower().startswith("ch"):
+        if h5.get(names[0], getclass=True) is h5py.Group:
+            roots.append(names[0] + "/")
+    return roots
+
+
+def expand_candidates(roots: Sequence[str], candidates: Sequence[str]) -> List[str]:
+    return [root + candidate for root in roots for candidate in candidates]
+
+
 def discover_signal_paths(h5: h5py.File, signal_names: Sequence[str]) -> List[str]:
-    """Inspect message groups without opening every unrelated signal dataset."""
+    """Only descend into LCC message branches in the channel/network/DBC layout."""
     matches: List[str] = []
-    pending = [h5["/"]]
-    visited = set()
-    while pending:
-        group = pending.pop()
-        address = h5py.h5o.get_info(group.id).addr
-        if address in visited:
-            continue
-        visited.add(address)
-        for name in group:
-            if name == "signals":
-                for signal_name in signal_names:
-                    path = (group.name.rstrip("/") + "/signals/" + signal_name).lstrip("/")
-                    if path in h5 and isinstance(h5[path], h5py.Dataset):
-                        matches.append(path)
-            elif group.get(name, getclass=True) is h5py.Group:
-                pending.append(group[name])
+    message_fragments = ("0x194", "0x1A3", "0x0B0", "0xA84", "0x3D9")
+    for root in signal_roots(h5):
+        root_group = h5[root.rstrip("/")] if root else h5
+        for channel_name in root_group:
+            if not re.fullmatch(r"ch\d+", channel_name, re.IGNORECASE):
+                continue
+            channel = root_group[channel_name]
+            if not isinstance(channel, h5py.Group):
+                continue
+            for network_name in channel:
+                network = channel[network_name]
+                if not isinstance(network, h5py.Group):
+                    continue
+                for dbc_name in network:
+                    dbc = network[dbc_name]
+                    if not isinstance(dbc, h5py.Group):
+                        continue
+                    for message_name in dbc:
+                        if not any(fragment.lower() in message_name.lower() for fragment in message_fragments):
+                            continue
+                        prefix = f"{root}{channel_name}/{network_name}/{dbc_name}/{message_name}/signals/"
+                        for signal_name in signal_names:
+                            path = prefix + signal_name
+                            if path in h5 and isinstance(h5[path], h5py.Dataset):
+                                matches.append(path)
     return matches
 
 
@@ -419,10 +473,22 @@ def find_signal_path(
         return choose_preferred_signal_path(h5, matched_candidates, preferred_value_sets)
 
     paths = discovered_paths if discovered_paths is not None else discover_signal_paths(h5, (signal_name,))
+    aliases = {
+        "ILCCC_Act": (
+            ("ILCCC_Act", ("0x194", "ACC_AxlTrqReq")),
+            ("ILCCC_Act_1AX", ("0x1A3", "ACC_CmdExt")),
+            ("ILCCC_Act1_1AX", ("0x0B0", "ADSCmd_Ext")),
+        ),
+        "Debug_uint_Reserved_11": (
+            ("LCCC_Act", ("0xA84", "DAebMPart1Obj21")),
+            ("Debug_uint_Reserved_11", ("0x3D9", "Reserved_10")),
+        ),
+    }
+    definitions = aliases.get(signal_name, ((signal_name, required_fragments),))
     matches = [
         path for path in paths
-        if path.endswith("/signals/" + signal_name)
-        and all(fragment in path for fragment in required_fragments)
+        if any(path.endswith("/signals/" + name) and all(fragment in path for fragment in fragments)
+               for name, fragments in definitions)
     ]
     if not matches:
         return None
@@ -431,9 +497,10 @@ def find_signal_path(
         for index, candidate in enumerate(candidates):
             if path == candidate:
                 return index, path
-        if path.startswith("ch3/"):
+        channel_path = re.sub(r"^.*?/(?=ch\d+/)", "", path)
+        if channel_path.startswith("ch3/"):
             return len(candidates), path
-        if path.startswith("ch4/"):
+        if channel_path.startswith("ch4/"):
             return len(candidates) + 1, path
         return len(candidates) + 2, path
 
@@ -449,11 +516,15 @@ def choose_preferred_signal_path(
     if not preferred_value_sets or len(ordered_paths) == 1:
         return ordered_paths[0]
 
-    preferred_scores = [
-        (signal_value_score(h5[path], preferred_value_sets), index, path)
-        for index, path in enumerate(ordered_paths)
-    ]
-    return sorted(preferred_scores)[0][2]
+    best_path = ordered_paths[0]
+    best_score = len(preferred_value_sets) + 3
+    for path in ordered_paths:
+        score = signal_value_score(h5[path], preferred_value_sets)
+        if score < best_score:
+            best_score, best_path = score, path
+        if score == 0:
+            break
+    return best_path
 
 
 def signal_value_score(dataset: h5py.Dataset, preferred_value_sets: Sequence[Sequence[int]]) -> int:
@@ -687,6 +758,8 @@ def draw_header(draw: ImageDraw.ImageDraw, stats: SyncStats, fonts: FontSet, pal
         f"{edge_text}"
         f"采样点不一致比例：{mismatch_rate:.2f}%"
     )
+    if stats.read_errors:
+        stats_text += f"；读取失败 {len(stats.read_errors)} 个（结果不完整）"
     draw.text((72, 135), stats_text, fill=palette.text, font=fonts.subtitle)
 
     if len(start_diffs):

@@ -495,7 +495,7 @@ def _find_scene_segments_uncached(frame: SignalFrame, scene: str) -> List[Segmen
     if scene == "stop2go":
         return filter_segments_for_primary(frame, stop2go_segments(frame))
     if scene == "slope_no_front":
-        return filter_segments_for_primary(frame, slope_no_front_segments(frame))
+        return slope_no_front_segments(frame)
     if scene == "curvature":
         return filter_segments_for_primary(frame, curvature_segments(frame))
     raise KeyError("Unknown scene: %s" % scene)
@@ -611,13 +611,45 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
             np.logical_not(frame.col("front_valid", 0).astype(bool)),
             frame.col("curv_speed_limit", 100.0).astype(float) >= speed,
             speed <= np.maximum(set_speed / 3.6, 0.0) + 3.0,
+            np.isfinite(speed),
+            np.isfinite(set_speed),
+            set_speed > 0.0,
         ]
     )
-    return [
-        seg
-        for seg in mask_to_segments(frame.time_s, mask)
-        if seg.duration(frame.time_s) >= min_duration_s
-    ]
+    segments: List[Segment] = []
+    reference = None
+    candidate_start = None
+    dwell_start = None
+    steady_start = None
+    for i in range(len(frame.time_s) + 1):
+        valid = i < len(frame.time_s) and mask[i]
+        changed = valid and reference is not None and abs(set_speed[i] - reference) > 1e-6
+        if not valid or changed:
+            if steady_start is not None:
+                segment = Segment(steady_start, i - 1)
+                primary_length = frame.primary_length if frame.primary_length is not None else frame.length
+                owned = (
+                    candidate_start < primary_length
+                    and not (frame.has_continuous_previous and candidate_start == 0)
+                )
+                if owned and segment.duration(frame.time_s) >= min_duration_s - 1e-9:
+                    segments.append(segment)
+            reference = dwell_start = steady_start = None
+        if not valid:
+            continue
+        if reference is None:
+            reference = set_speed[i]
+            candidate_start = i
+        if steady_start is not None:
+            continue
+        if abs(speed[i] - set_speed[i] / 3.6) <= 2.0 / 3.6 + 1e-9:
+            if dwell_start is None:
+                dwell_start = i
+            if frame.time_s[i] - frame.time_s[dwell_start] >= 1.0 - 1e-9:
+                steady_start = i
+        else:
+            dwell_start = None
+    return segments
 
 
 def curvature_segments(frame: SignalFrame) -> List[Segment]:

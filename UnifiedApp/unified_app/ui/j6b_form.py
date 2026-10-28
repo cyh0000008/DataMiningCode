@@ -97,6 +97,9 @@ class J6BForm(QWidget):
 
         output_row = QHBoxLayout()
         self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setToolTip(
+            "报告完成后在此目录生成“车型_软件版本_当前时间.zip”，仅包含对比报告和 Bad Case Excel。"
+        )
         output_row.addWidget(self.output_dir_edit)
         output_btn = QPushButton("浏览…")
         output_btn.clicked.connect(self._browse_output_dir)

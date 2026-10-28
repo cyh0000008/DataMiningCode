@@ -23,6 +23,78 @@ J6B = ROOT / "J6B_UnifiedMining"
 
 
 class ActivationSyncTests(unittest.TestCase):
+    def test_wrapped_layout_targeted_fallback_and_read_failures(self):
+        result = subprocess.run(
+            [sys.executable, "-c", r'''
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+import h5py
+import numpy as np
+import activation_sync_check as sync
+
+with tempfile.TemporaryDirectory() as folder:
+    work = Path(folder)
+    wrapped = work / "wrapped.h5"
+    with h5py.File(wrapped, "w") as h5:
+        for path, offset in ((sync.BUS_SIGNAL_CANDIDATES[0], 0.),
+                             (sync.ETHERNET_SIGNAL_CANDIDATES[0], .3)):
+            path = "recording/" + path
+            h5.create_dataset(path, data=[0, 1, 1, 0])
+            h5.create_dataset(sync.timestamp_path_for_signal(path),
+                              data=np.array([0., 1., 2., 3.]) + offset)
+    with patch.object(sync, "discover_signal_paths", side_effect=AssertionError("wrapped exact path must not scan")):
+        data = sync.read_file_signals(wrapped)
+        assert data.bus_signal_path.startswith("recording/ch3/")
+        assert data.ethernet_signal_path.startswith("recording/ch4/")
+
+    fallback = work / "alternate_version.h5"
+    with h5py.File(fallback, "w") as h5:
+        for msg, signal, lag in (
+            ("0x194_ACC_AxlTrqReq_0x194", "ILCCC_Act", 0.),
+            ("0xA84_DAebMPart1Obj21", "LCCC_Act", -.3),
+        ):
+            prefix = "recording/ch9/Network/NewDBC/" + msg
+            h5.create_dataset(prefix + "/signals/" + signal, data=[0, 1, 1, 0])
+            h5.create_dataset(prefix + "/timestamp", data=np.array([0., 1., 2., 3.]) + lag)
+        for i in range(1000):
+            h5.create_dataset(f"recording/ch9/Network/NewDBC/Unrelated_{i}/signals/other", data=[0])
+        h5.create_dataset("recording/ExpensiveTopic/subtree/data", data=[0])
+    original_getitem = h5py.Group.__getitem__
+    def guarded_getitem(group, name):
+        assert "Unrelated_" not in str(name) and "ExpensiveTopic" not in str(name), (group.name, name)
+        return original_getitem(group, name)
+    with patch.object(h5py.Group, "__getitem__", guarded_getitem), \
+         patch.object(h5py.Group, "visititems", side_effect=AssertionError("full scan")):
+        data = sync.read_file_signals(fallback)
+        assert data.ethernet_signal_path.endswith("/signals/LCCC_Act")
+        assert data.bus_value.tolist() == [0, 1, 1, 0]
+
+    corrupt = work / "unreadable.h5"
+    reader = sync.read_file_signals
+    def read(path):
+        if path == corrupt:
+            raise RuntimeError("Unable to synchronously check link existence (free block size is zero?)")
+        return reader(path)
+    with patch.object(sync, "read_file_signals", side_effect=read):
+        result = sync.write_mining_sync_report([wrapped, corrupt, fallback], work)
+    assert result["failed_files"] == 1
+    assert result["matched_edges"] == 4
+    assert result["has_large_delay"] is True
+    assert result["read_errors"][0]["file_path"] == str(corrupt)
+    assert "不完整" in result["detail"]
+    assert Path(result["plot_path"]).is_file()
+    with patch.object(sync, "read_file_signals", side_effect=read):
+        result = sync.write_mining_sync_report([corrupt], work)
+    assert result["failed_files"] == 1 and result["matched_edges"] == 0
+    assert result["max_abs_lag_ms"] is None
+    assert "不完整" in result["detail"]
+'''],
+            cwd=J6B, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_scheduling_without_comparison_and_failure_states(self):
         app = QApplication.instance() or QApplication([])
         with tempfile.TemporaryDirectory() as folder:
@@ -234,6 +306,15 @@ with tempfile.TemporaryDirectory() as folder:
             manager._on_output(job.id, final=True)
             self.assertEqual(job.sync_status, "否（无有效样本）")
             self.assertIn("缺少信号", panel.table.item(0, COL_SYNC).toolTip())
+            for large, expected in ((True, "是（结果不完整）"), (False, "检查不完整")):
+                payload = json.dumps({
+                    "has_large_delay": large, "matched_edges": 2 if large else 0,
+                    "failed_files": 1, "detail": "读取失败，结果不完整", "plot_path": str(plot),
+                })
+                process.chunk = ("LCC_SYNC_RESULT: " + payload + "\n").encode()
+                manager._on_output(job.id)
+                self.assertEqual(job.sync_status, expected)
+                self.assertEqual(panel.table.item(0, COL_SYNC).text(), expected)
             process.chunk = b"LCC_SYNC_RESULT: invalid\n"
             manager._on_output(job.id)
             self.assertEqual(job.sync_status, "检查失败")

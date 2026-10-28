@@ -42,7 +42,6 @@ METRIC_DISPLAY_NAMES = {
     "acc_exit_after_abs": "ABS触发关联ACC退出",
     "acc_exit_after_tcs": "TCS触发关联ACC退出",
     "acc_exit_after_vse": "VSE触发关联ACC退出",
-    "abs_activation_count": "ABS激活",
     "tcs_activation_count": "TCS激活",
     "vse_activation_count": "VSE激活",
     "apa_gear_switch_jerkiness": "泊车换挡顿挫",
