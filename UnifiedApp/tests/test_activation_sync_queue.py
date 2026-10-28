@@ -23,6 +23,52 @@ J6B = ROOT / "J6B_UnifiedMining"
 
 
 class ActivationSyncTests(unittest.TestCase):
+    def test_cross_platform_chinese_font_lookup(self):
+        result = subprocess.run(
+            [sys.executable, "-c", r'''
+from pathlib import Path
+from unittest.mock import patch
+from subprocess import CompletedProcess
+import activation_sync_check as sync
+
+regular = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
+bold = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc")
+for available, expected in (({regular, bold}, (regular, bold)), ({regular}, (regular, regular))):
+    with patch.object(Path, "is_file", lambda path: path in available), \
+         patch.object(sync.subprocess, "run", side_effect=AssertionError("fixed path must not query fontconfig")):
+        assert sync.find_chinese_fonts() == expected
+
+custom = Path("/custom/fonts/Chinese.ttc")
+with patch.object(Path, "is_file", lambda path: path == custom), \
+     patch.object(sync.shutil, "which", return_value="/usr/bin/fc-match"), \
+     patch.object(sync.subprocess, "run", return_value=CompletedProcess(
+         [], 0, str(custom) + "\nen|zh-cn|zh-tw", "")) as query:
+    assert sync.find_chinese_fonts() == (custom, custom)
+    assert query.call_args.kwargs["timeout"] == 10
+with patch.object(Path, "is_file", return_value=False), \
+     patch.object(sync.shutil, "which", return_value=None):
+    try:
+        sync.find_chinese_fonts()
+        raise AssertionError("missing font must fail explicitly")
+    except FileNotFoundError as exc:
+        assert "fonts-noto-cjk" in str(exc)
+with patch.object(Path, "is_file", lambda path: path == custom), \
+     patch.object(sync.shutil, "which", return_value="/usr/bin/fc-match"), \
+     patch.object(sync.subprocess, "run", return_value=CompletedProcess(
+         [], 0, str(custom) + "\nen|fr", "")):
+    try:
+        sync.find_chinese_fonts()
+        raise AssertionError("non-Chinese fallback must not be used")
+    except FileNotFoundError:
+        pass
+fonts = sync.FontSet()
+assert fonts.title.getbbox("延迟检查")[2] > 0
+'''],
+            cwd=J6B, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_tu27pv007_default_paths_skip_discovery(self):
         result = subprocess.run(
             [sys.executable, "-c", r'''

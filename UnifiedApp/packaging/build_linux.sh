@@ -9,7 +9,8 @@
 #   2. 自动安装 requirements.txt 里的依赖（PySide6）以及 pyinstaller；
 #   3. 尽量自动安装 PySide6/Qt 运行所需的系统共享库（仅当检测到 apt-get 且
 #      有 root/sudo 权限时才会执行，失败不会中断打包，只会给出提示）；
-#   4. 执行 PyInstaller 打包。
+#   4. 检测中文字体，缺少时自动安装 fonts-noto-cjk 并复查；
+#   5. 执行 PyInstaller 打包。
 #
 set -euo pipefail
 
@@ -105,7 +106,65 @@ install_system_deps() {
 install_system_deps
 
 # ----------------------------------------------------------------------
-# 3. 自动安装 Python 依赖（requirements.txt + pyinstaller）
+# 3. 确保延迟检查绘图可使用中文字体
+# ----------------------------------------------------------------------
+has_chinese_font() {
+  local font
+  for font in \
+    /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc \
+    /usr/share/fonts/truetype/wqy/wqy-microhei.ttc \
+    /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc; do
+    if [[ -f "${font}" ]]; then
+      return 0
+    fi
+  done
+  if command -v fc-list >/dev/null 2>&1; then
+    local fonts
+    if fonts="$(fc-list ':lang=zh-cn' file)" && [[ -n "${fonts}" ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+ensure_chinese_font() {
+  if has_chinese_font; then
+    log "已检测到中文字体，跳过字体安装。"
+    return 0
+  fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    log "错误：未找到中文字体且无 apt-get，请手动安装 Noto CJK 或文泉驿字体后重新打包。" >&2
+    return 1
+  fi
+
+  local sudo_cmd=""
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd="sudo"
+    else
+      log "错误：未找到中文字体，安装需要 root 或 sudo 权限。" >&2
+      return 1
+    fi
+  fi
+
+  log "未检测到中文字体，正在安装 fonts-noto-cjk 和 fontconfig..."
+  if ! ${sudo_cmd} apt-get update -y ||
+     ! ${sudo_cmd} apt-get install -y fonts-noto-cjk fontconfig ||
+     ! ${sudo_cmd} fc-cache -f; then
+    log "错误：中文字体安装失败，请执行 sudo apt-get install -y fonts-noto-cjk fontconfig 后重试。" >&2
+    return 1
+  fi
+  if ! has_chinese_font; then
+    log "错误：安装后仍未检测到中文字体，请检查字体安装及 fontconfig 配置。" >&2
+    return 1
+  fi
+  log "中文字体安装并检测通过。"
+}
+
+ensure_chinese_font
+
+# ----------------------------------------------------------------------
+# 4. 自动安装 Python 依赖（requirements.txt + pyinstaller）
 # ----------------------------------------------------------------------
 log "升级 pip 并安装 Python 依赖（requirements.txt + pyinstaller）..."
 "${PYTHON_BIN}" -m pip install --upgrade pip
@@ -113,7 +172,7 @@ log "升级 pip 并安装 Python 依赖（requirements.txt + pyinstaller）..."
 "${PYTHON_BIN}" -m pip install pyinstaller
 
 # ----------------------------------------------------------------------
-# 4. 执行打包
+# 5. 执行打包
 # ----------------------------------------------------------------------
 log "开始执行 PyInstaller 打包..."
 "${PYTHON_BIN}" -m PyInstaller --noconfirm --clean "${PROJECT_ROOT}/packaging/UnifiedApp.spec"

@@ -387,6 +387,33 @@ POWERTRAIN_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
     POWERTRAIN_ICE: {},
 }
 
+for _powertrain in POWERTRAIN_TYPES:
+    for _profile in (REPORT_PROFILE_J6B, REPORT_PROFILE_MMT):
+        _is_j6b = _profile == REPORT_PROFILE_J6B
+        _is_ice = _powertrain == POWERTRAIN_ICE
+        _build_upper = (4.5 if _is_ice else 4.0) if _is_j6b else (4.0 if _is_ice else 3.5)
+        _fluct_upper = 0.6 if _is_ice else 0.3
+        _distance_range = "2.5~4.5m" if _is_j6b and _is_ice else "3~4m"
+        _standards = {
+            "起步加速建立时间": f"<={_build_upper:g}s",
+            "跟车起步舒适性": f"最大jerk<={2.0 if _is_j6b else 1.5:g}m/s3",
+            "坡道稳速抖动": (
+                f"车速半极差<={_fluct_upper:g}m/s" if _is_j6b
+                else f"仪表车速极差<={_fluct_upper:g}km/h"
+            ),
+            "坡道控速稳定性": f"|加速度|<={1.0 if _is_j6b else 0.75:g}m/s2",
+            "坡道控速舒适性": f"|jerk|<={1.5 if _is_j6b else 1.0:g}m/s3",
+            "跟车刹停距离": _distance_range,
+            "弯道安全速度": (
+                "sqrt(1.0*R)-2 ~ sqrt(2.9*R)+2m/s；SetSpeed<=sqrt(1.0*R)不判bad"
+            ),
+            "弯道限速最大减速度": f">={-2.5 if _is_j6b else -2:g}m/s2",
+            "弯道限速减速舒适性": f">={-2.5 if _is_j6b else -2:g}m/s3",
+        }
+        if not _is_j6b:
+            _standards["绿灯起步舒适性"] = "最大jerk<=2.5m/s3"
+        POWERTRAIN_METRIC_STANDARD_OVERRIDES[_powertrain][_profile] = _standards
+
 
 def resolve_signal_mapping(cn_name: str, report_profile: str) -> tuple[str, str, str] | None:
     normalized_name = normalize(cn_name)
@@ -1621,7 +1648,12 @@ def apply_metric_standards(
             legacy_standard = labeled_standards.pop("PHEV/BEV")
             labeled_standards.setdefault("PHEV", legacy_standard)
             labeled_standards.setdefault("BEV", legacy_standard)
-        if labeled_standards:
+        current_standard = POWERTRAIN_METRIC_STANDARD_OVERRIDES[selected_powertrain].get(
+            report_profile, {}
+        ).get(normalize(ws.cell(row, 2).value))
+        if current_standard is not None:
+            standard = current_standard
+        elif labeled_standards:
             if selected_powertrain not in labeled_standards:
                 raise ValueError(
                     f"模板第 {row} 行（{ws.cell(row, 2).value}）缺少 "

@@ -5,6 +5,8 @@ import datetime as dt
 import json
 import math
 import re
+import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -722,11 +724,35 @@ def find_chinese_fonts() -> Tuple[Path, Path]:
         (Path(r"C:\Windows\Fonts\msyh.ttc"), Path(r"C:\Windows\Fonts\msyhbd.ttc")),
         (Path(r"C:\Windows\Fonts\simhei.ttf"), Path(r"C:\Windows\Fonts\simhei.ttf")),
         (Path(r"C:\Windows\Fonts\simsun.ttc"), Path(r"C:\Windows\Fonts\simsun.ttc")),
+        (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc")),
+        (Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+         Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc")),
+        (Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+         Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")),
+        (Path("/System/Library/Fonts/PingFang.ttc"),
+         Path("/System/Library/Fonts/PingFang.ttc")),
     ]
     for regular, bold in candidates:
-        if regular.exists() and bold.exists():
-            return regular, bold
-    raise FileNotFoundError("未找到可渲染中文的字体，请安装微软雅黑、黑体或宋体。")
+        if regular.is_file():
+            return regular, bold if bold.is_file() else regular
+    fontconfig = shutil.which("fc-match")
+    if fontconfig:
+        result = subprocess.run(
+            [fontconfig, "-f", "%{file}\n%{lang}", ":lang=zh-cn"],
+            capture_output=True, text=True, encoding="utf-8", timeout=10,
+        )
+        if result.returncode:
+            raise RuntimeError(f"查询中文字体失败：{result.stderr.strip()}")
+        lines = result.stdout.splitlines()
+        if len(lines) >= 2 and "zh-cn" in lines[1].lower().split("|"):
+            regular = Path(lines[0])
+            if regular.is_file():
+                return regular, regular
+    raise FileNotFoundError(
+        "未找到中文字体。Ubuntu/Debian 请安装 fonts-noto-cjk"
+        "（sudo apt install fonts-noto-cjk）；Windows 请安装微软雅黑、黑体或宋体。"
+    )
 
 
 def draw_header(draw: ImageDraw.ImageDraw, stats: SyncStats, fonts: FontSet, palette: Palette) -> None:
