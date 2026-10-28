@@ -23,6 +23,43 @@ J6B = ROOT / "J6B_UnifiedMining"
 
 
 class ActivationSyncTests(unittest.TestCase):
+    def test_tu27pv007_default_paths_skip_discovery(self):
+        result = subprocess.run(
+            [sys.executable, "-c", r'''
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+import h5py
+import numpy as np
+import activation_sync_check as sync
+
+bus = "ch3/CAN_PB/SGM_C1UL_PB_CAN_0227/0x194_ACC_AxlTrqReq_0x194/signals/ILCCC_Act"
+eth = "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0xA84_DAebMPart1Obj21/signals/LCCC_Act"
+assert sync.BUS_SIGNAL_CANDIDATES[0] == bus
+assert sync.ETHERNET_SIGNAL_CANDIDATES[0] == eth
+with tempfile.TemporaryDirectory() as folder:
+    for prefix in ("", "recording/"):
+        path = Path(folder) / ("wrapped.h5" if prefix else "root.h5")
+        with h5py.File(path, "w") as h5:
+            for signal, offset in ((bus, 0.), (eth, .3)):
+                h5.create_dataset(prefix + signal, data=[0, 1, 1, 0])
+                h5.create_dataset(sync.timestamp_path_for_signal(prefix + signal),
+                                  data=np.array([0., 1., 2., 3.]) + offset)
+        with patch.object(sync, "discover_signal_paths", side_effect=AssertionError("must use default paths")):
+            data = sync.read_file_signals(path)
+        assert data.bus_signal_path == prefix + bus
+        assert data.ethernet_signal_path == prefix + eth
+        bus_t, bus_v = sync.extract_bus_edges(data.bus_time, data.bus_value)
+        eth_t, eth_v = sync.extract_ethernet_edges(data.ethernet_time, data.ethernet_raw_value)
+        matches = list(sync.match_edges(bus_t, bus_v, eth_t, eth_v, 10.))
+        assert len(matches) == 2
+        np.testing.assert_allclose([match[3] for match in matches], .3)
+'''],
+            cwd=J6B, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_wrapped_layout_targeted_fallback_and_read_failures(self):
         result = subprocess.run(
             [sys.executable, "-c", r'''

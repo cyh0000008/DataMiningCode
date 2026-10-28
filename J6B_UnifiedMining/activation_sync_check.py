@@ -29,9 +29,11 @@ BUS_SIGNAL_CANDIDATES = [
 ]
 
 ETHERNET_SIGNAL_CANDIDATES = [
+    "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0xA84_DAebMPart1Obj21/signals/LCCC_Act",
     "ch4/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0xA84_DAebMPart1Obj21/signals/LCCC_Act",
     "ch4/Eth_Debug_CAN5/PATAC_Rcore_Debug_Msg_0p4p1/0x3D9_MPC_DebugMsg_Reserved_10/signals/Debug_uint_Reserved_11",
     "ch5/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p6_Release_0709/0xA84_DAebMPart1Obj21/signals/LCCC_Act",
+    "ch5/Eth_Debug_CAN5/PATAC_Acore_Debug_Msg_v0p1p7_Release_0714/0xA84_DAebMPart1Obj21/signals/LCCC_Act",
 ]
 
 
