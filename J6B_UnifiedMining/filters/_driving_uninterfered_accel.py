@@ -127,7 +127,12 @@ def create_metric_class(stratum: str, measurement: str) -> type[BaseMetric]:
                     end_s=item["end_s"],
                     severity=severity_outside(item[metric_field], lower, upper, 1.0),
                     message="%s=%.6f" % (metric_field, item[metric_field]),
-                    values={**item, "measurement_value": item[metric_field]},
+                    values={
+                        **item, "measurement_value": item[metric_field],
+                        "screening_measure": metric_field, "screening_value": item[metric_field],
+                        "screening_lower": lower, "screening_upper": upper,
+                        "screening_strict": measurement in {"avg_acc", "accel_build_time"},
+                    },
                 )
                 for item in selected
                 if is_bad(item[metric_field])
@@ -276,6 +281,9 @@ def _extract_observations(frame: SignalFrame) -> list[dict[str, Any]]:
                 "duration_s": round(duration_s, 6),
                 "initial_speed_kph": initial_speed,
                 "target_speed_kph": round(initial_speed + 20.0, 6),
+                "value_time_s": float(t[seg.start + max_offset]),
+                "acceleration_window_end_time_s": float(t[seg.start + goal_offset]),
+                "accel_build_start_time_s": float(t[seg.start + int(build_hits[0])]),
                 "max_acceleration_mps2": float(smooth_acceleration[max_offset]),
                 "acceleration_build_time_s": float(
                     t[seg.start + max_offset] - t[seg.start + int(build_hits[0])]

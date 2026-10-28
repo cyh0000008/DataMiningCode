@@ -3,13 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import queue
 import shutil
 import sys
 import tempfile
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -20,7 +21,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 
 from DataMining import h5_files_are_continuous, load_config
-from metric_utils import derivative, display_speed_array, time_window_moving_average
+from metric_utils import jerk_from_acceleration, time_window_moving_average
+from metric_display_names import metric_display_name
 from signal_preprocessor import SignalFrame, build_signal_frame, stitch_signal_frames
 
 
@@ -43,6 +45,7 @@ class CaseRow:
     end_s: float
     severity: Any
     message: str
+    values: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -59,6 +62,9 @@ class PlotPanel:
     unit: str
     lines: List[PlotLine]
     fixed_range: Optional[Tuple[float, float]] = None
+    thresholds: List[Tuple[str, float]] = field(default_factory=list)
+    highlight: Optional[np.ndarray] = None
+    markers: List[Tuple[str, float]] = field(default_factory=list)
 
 
 class FontSet:
@@ -79,6 +85,8 @@ class FrameCache:
         normalized = str(Path(source_path).resolve())
         cache_key = "%s|%.1f" % (normalized, math.ceil(max(needed_end_s, 0.0) / 300.0))
         if cache_key not in self.cache:
+            if len(self.cache) >= 2:
+                self.cache.pop(next(iter(self.cache)))
             self.cache[cache_key] = self._build_frame(normalized, needed_end_s)
         return self.cache[cache_key]
 
@@ -228,8 +236,9 @@ def generate_report_with_images(
     bad_case_report_path: Path,
     output_path: Optional[Path] = None,
     log: Optional[Callable[[str], None]] = None,
+    config: Optional[Mapping[str, Any]] = None,
 ) -> Path:
-    logger = log or (lambda _msg: None)
+    logger = log or print
     input_path = Path(bad_case_report_path).resolve()
     if not input_path.exists():
         raise FileNotFoundError("未找到 bad_case_report.xlsx：%s" % input_path)
@@ -239,9 +248,10 @@ def generate_report_with_images(
         output_path = Path(output_path).resolve()
 
     manifest = load_manifest(input_path.parent)
-    config_path = resolve_config_path(input_path.parent, manifest)
-    logger("使用配置：%s" % config_path)
-    config = load_config(config_path)
+    if config is None:
+        config_path = resolve_config_path(input_path.parent, manifest)
+        logger("使用配置：%s" % config_path)
+        config = load_config(config_path)
     frame_cache = FrameCache(config, manifest)
 
     workbook = load_workbook(input_path)
@@ -251,8 +261,19 @@ def generate_report_with_images(
     logger("读取到 %d 条 case" % len(cases))
 
     image_col = ensure_output_columns(sheet)
-    temp_dir = Path(tempfile.mkdtemp(prefix="bad_case_signal_plots_"))
-    image_paths: List[Path] = []
+    sheet._images = [
+        image for image in sheet._images
+        if not (
+            hasattr(image.anchor, "_from")
+            and image.anchor._from.col == image_col - 1
+            and image.anchor._from.row >= 1
+        )
+    ]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plot_dir = output_path.parent / (output_path.stem + "_signal_plots")
+    plot_dir.mkdir(exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="bad_case_signal_plots_", dir=output_path.parent))
+    failures = 0
     try:
         for index, case in enumerate(cases, 1):
             logger("[%d/%d] %s %.3f-%.3fs" % (index, len(cases), case.metric_name, case.start_s, case.end_s))
@@ -260,17 +281,24 @@ def generate_report_with_images(
                 frame = frame_cache.get(case.source_path, case.end_s)
                 image_path = temp_dir / ("case_%04d.png" % index)
                 draw_case_plot(frame, case, image_path)
-                image_paths.append(image_path)
                 add_image_to_sheet(sheet, case.row_index, image_col, image_path)
+                full_image = plot_dir / image_path.name
+                shutil.copy2(image_path, full_image)
+                status_cell = sheet.cell(case.row_index, image_col + 1, "已生成；点击查看高清图")
+                status_cell.hyperlink = str(full_image.relative_to(output_path.parent))
+                status_cell.style = "Hyperlink"
             except Exception as exc:
+                failures += 1
                 sheet.cell(row=case.row_index, column=image_col, value="绘图失败：%s" % exc)
+                sheet.cell(case.row_index, image_col + 1, "绘图失败：%s" % exc)
                 sheet.cell(row=case.row_index, column=image_col).alignment = Alignment(wrap_text=True, vertical="center")
                 logger("  绘图失败：%s" % exc)
 
         style_output_workbook(sheet, image_col)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        workbook.save(output_path)
-        logger("保存成功：%s" % output_path)
+        saved_path = temp_dir / "report.xlsx"
+        workbook.save(saved_path)
+        saved_path.replace(output_path)
+        logger("信号图报告保存：%s；成功 %d，失败 %d" % (output_path, len(cases) - failures, failures))
         return output_path
     finally:
         workbook.close()
@@ -281,11 +309,10 @@ def load_manifest(report_dir: Path) -> Dict[str, Any]:
     manifest_path = report_dir / "run_manifest.json"
     if not manifest_path.exists():
         return {}
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("run_manifest.json 必须为 JSON 对象：%s" % manifest_path)
+    return data
 
 
 def resolve_config_path(report_dir: Path, manifest: Mapping[str, Any]) -> Path:
@@ -327,6 +354,7 @@ def read_cases(sheet: Any, header_map: Mapping[str, int]) -> List[CaseRow]:
     end_col = require_header(header_map, "结束时间(s)")
     severity_col = header_map.get("严重程度得分")
     message_col = header_map.get("问题内容")
+    values_col = header_map.get("判定数据")
     cases: List[CaseRow] = []
     for row_index in range(2, sheet.max_row + 1):
         source_path = str(sheet.cell(row=row_index, column=source_col).value or "").strip()
@@ -338,6 +366,13 @@ def read_cases(sheet: Any, header_map: Mapping[str, int]) -> List[CaseRow]:
             continue
         if end_s < start_s:
             start_s, end_s = end_s, start_s
+        values = {}
+        if values_col:
+            raw_values = sheet.cell(row_index, values_col).value
+            if raw_values:
+                values = json.loads(str(raw_values))
+                if not isinstance(values, dict):
+                    raise ValueError("第%d行判定数据必须为 JSON 对象" % row_index)
         cases.append(
             CaseRow(
                 row_index=row_index,
@@ -347,6 +382,7 @@ def read_cases(sheet: Any, header_map: Mapping[str, int]) -> List[CaseRow]:
                 end_s=float(end_s),
                 severity=sheet.cell(row=row_index, column=severity_col).value if severity_col else "",
                 message=str(sheet.cell(row=row_index, column=message_col).value or "") if message_col else "",
+                values=values,
             )
         )
     return cases
@@ -378,14 +414,21 @@ def ensure_output_columns(sheet: Any) -> int:
     header.fill = PatternFill("solid", fgColor="1F4E78")
     header.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     sheet.column_dimensions[header.column_letter].width = 132
+    status = sheet.cell(1, image_col + 1, STATUS_HEADER)
+    status.font = Font(bold=True)
+    sheet.column_dimensions[status.column_letter].width = 42
     return image_col
 
 
 def add_image_to_sheet(sheet: Any, row_index: int, image_col: int, image_path: Path) -> None:
     image = WorkbookImage(str(image_path))
     image.width = EXCEL_IMAGE_WIDTH
-    image.height = EXCEL_IMAGE_HEIGHT
-    sheet.row_dimensions[row_index].height = 392
+    with Image.open(image_path) as source:
+        image.height = source.height * EXCEL_IMAGE_WIDTH / source.width
+    sheet.row_dimensions[row_index].height = min(image.height * 0.75 + 8, 409)
+    if image.height > 530:
+        image.width *= 530 / image.height
+        image.height = 530
     sheet.add_image(image, "%s%d" % (sheet.cell(row=1, column=image_col).column_letter, row_index))
     cell = sheet.cell(row=row_index, column=image_col)
     cell.value = ""
@@ -396,7 +439,7 @@ def style_output_workbook(sheet: Any, image_col: int) -> None:
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     for row in range(2, sheet.max_row + 1):
-        for col in range(1, image_col + 1):
+        for col in range(1, sheet.max_column + 1):
             sheet.cell(row=row, column=col).alignment = Alignment(vertical="center", wrap_text=True)
 
 
@@ -417,17 +460,24 @@ def draw_case_plot(frame: SignalFrame, case: CaseRow, output_path: Path) -> None
     if not panels:
         raise ValueError("没有可绘制的关键信号")
 
+    evidence = build_evidence_panel(frame, case, mask)
+    if evidence is not None:
+        panels.insert(0, evidence)
+    markers = evidence_markers(case)
+    for panel in panels:
+        panel.markers = markers
     fonts = FontSet()
-    image = Image.new("RGB", (PLOT_WIDTH, PLOT_HEIGHT), (246, 248, 252))
+    height = max(PLOT_HEIGHT, 180 + len(panels) * 165)
+    image = Image.new("RGB", (PLOT_WIDTH, height), (246, 248, 252))
     draw = ImageDraw.Draw(image)
     draw_plot_header(draw, fonts, case, window_start, window_end)
 
-    panel_count = min(len(panels), 5)
-    panel_top = 95
+    panel_count = len(panels)
+    panel_top = 150
     panel_gap = 12
-    panel_height = int((PLOT_HEIGHT - panel_top - 22 - panel_gap * (panel_count - 1)) / panel_count)
+    panel_height = int((height - panel_top - 22 - panel_gap * (panel_count - 1)) / panel_count)
     rel_t = t[mask]
-    for panel_index, panel in enumerate(panels[:panel_count]):
+    for panel_index, panel in enumerate(panels):
         top = panel_top + panel_index * (panel_height + panel_gap)
         box = (22, top, PLOT_WIDTH - 22, top + panel_height)
         draw_panel(draw, box, panel, rel_t, start_s, end_s, fonts)
@@ -440,10 +490,6 @@ def plot_window_bounds(t: np.ndarray, start_s: float, end_s: float) -> Tuple[flo
     pad = min(max(duration * 0.35, 3.0), 8.0)
     window_start = max(float(t[0]), start_s - pad)
     window_end = min(float(t[-1]), end_s + pad)
-    if window_end - window_start > 70.0:
-        center = (start_s + end_s) / 2.0
-        window_start = max(float(t[0]), center - 35.0)
-        window_end = min(float(t[-1]), center + 35.0)
     if window_end <= window_start:
         window_end = min(float(t[-1]), window_start + 1.0)
     return window_start, window_end
@@ -453,7 +499,7 @@ def draw_plot_header(draw: ImageDraw.ImageDraw, fonts: FontSet, case: CaseRow, w
     title = "%s | %.3f-%.3fs" % (Path(case.source_path).name, case.start_s, case.end_s)
     draw.text((22, 14), title, fill=(15, 23, 42), font=fonts.title)
     subtitle = "指标：%s    严重度：%s    展示窗口：%.1f-%.1fs" % (
-        case.metric_name,
+        metric_display_name(case.metric_name),
         case.severity,
         window_start,
         window_end,
@@ -461,6 +507,117 @@ def draw_plot_header(draw: ImageDraw.ImageDraw, fonts: FontSet, case: CaseRow, w
     draw.text((22, 46), subtitle, fill=(55, 70, 92), font=fonts.normal)
     if case.message:
         draw.text((22, 69), truncate_text(case.message, 130), fill=(78, 88, 105), font=fonts.small)
+    summary = evidence_summary(case)
+    draw.text((22, 91), truncate_text(summary, 140), fill=(190, 24, 45), font=fonts.small)
+    draw.text((22, 113), "粉色：已识别事件窗口；红线/红点：关键时刻或越界采样；阈值线为筛选标准（非准出标准）",
+              fill=(78, 88, 105), font=fonts.small)
+
+
+def evidence_markers(case: CaseRow) -> List[Tuple[str, float]]:
+    labels = {
+        "value_time_s": "判定值时刻",
+        "accel_build_start_time_s": "加速度建立起点",
+        "trigger_time_s": "功能激活",
+        "acc_exit_time_s": "ACC退出",
+        "positive_jerk_peak_time_s": "正jerk峰值",
+        "negative_jerk_peak_time_s": "负jerk峰值",
+        "release_timestamp": "override释放",
+    }
+    return [
+        (label, float(case.values[key])) for key, label in labels.items()
+        if as_float(case.values.get(key)) is not None
+        and math.isfinite(float(case.values[key]))
+    ]
+
+
+def evidence_summary(case: CaseRow) -> str:
+    data = case.values
+    if "screening_measure" not in data:
+        markers = ", ".join("%s=%.3fs" % item for item in evidence_markers(case))
+        return "事件判定窗口 %.3f~%.3fs；%s；组合条件详见问题内容和判定数据" % (
+            case.start_s, case.end_s, markers or "无单独的数值判定点记录",
+        )
+    strict = bool(data.get("screening_strict", False))
+    bounds = []
+    for key, operator in (("screening_lower", ">" if strict else ">="),
+                          ("screening_upper", "<" if strict else "<=")):
+        if data.get(key) is not None:
+            bounds.append("%s %g" % (operator, float(data[key])))
+    markers = ", ".join("%s=%.3fs" % item for item in evidence_markers(case))
+    return "判定量 %s=%g；合格范围 %s；%s" % (
+        data["screening_measure"], float(data["screening_value"]),
+        " 且 ".join(bounds), markers or "按整个事件窗口统计",
+    )
+
+
+def build_evidence_panel(frame: SignalFrame, case: CaseRow, mask: np.ndarray) -> Optional[PlotPanel]:
+    data = case.values
+    measure = data.get("screening_measure")
+    if measure is None:
+        return None
+    t = frame.time_s.astype(float)
+    window = (t >= case.start_s) & (t <= case.end_s)
+    units = "m/s2"
+    scalar = False
+    if measure in {"min_jerk", "max_jerk", "max_abs_jerk"}:
+        values = jerk_from_acceleration(t, frame.col("acceleration_total").astype(float))
+        if measure == "max_abs_jerk":
+            values = np.abs(values)
+        units = "m/s3"
+    elif measure in {"min_acc", "min_acc_dynamic", "max_acc", "max_abs_acc"}:
+        values = frame.col("acceleration_total").astype(float)
+        if measure == "max_abs_acc":
+            values = np.abs(values)
+    elif measure in {"min_ttc", "min_ttc_front_decel"}:
+        values = frame.col("front_ttc").astype(float)
+        units = "s"
+        if measure == "min_ttc_front_decel":
+            window &= frame.col("front_accel").astype(float) < -0.5
+    elif measure in {"min_front_distance", "stop_front_distance"}:
+        values = frame.col("front_range").astype(float)
+        units = "m"
+        if measure == "stop_front_distance":
+            sample_time = float(data["value_time_s"])
+            window[:] = False
+            window[int(np.argmin(np.abs(t - sample_time)))] = True
+    elif measure == "curvature_min_speed":
+        values = frame.col("ego_speed_mps").astype(float)
+        units = "m/s"
+        window[:] = False
+        window[int(np.argmin(np.abs(t - float(data["value_time_s"]))))] = True
+    elif measure == "max_acceleration_mps2":
+        window = (t >= case.start_s) & (t <= float(data.get("acceleration_window_end_time_s", case.end_s)))
+        values = np.full(t.shape, np.nan)
+        indices = np.flatnonzero(window)
+        if indices.size:
+            values[indices] = time_window_moving_average(
+                t[indices], frame.col("acceleration").astype(float)[indices], 0.5,
+            )
+    else:
+        scalar = True
+        values = np.where(window, float(data["screening_value"]), np.nan)
+        if measure in {"max_acc_time", "start_time", "start_latency", "acceleration_build_time_s"}:
+            units = "s"
+        elif measure == "velocity_fluct":
+            units = "m/s"
+    thresholds = [
+        (label, float(data[key])) for key, label in (
+            ("screening_lower", "筛选下限"), ("screening_upper", "筛选上限")
+        ) if data.get(key) is not None
+    ]
+    bad = np.zeros(t.shape, dtype=bool)
+    strict = bool(data.get("screening_strict", False))
+    if data.get("screening_lower") is not None:
+        lower = float(data["screening_lower"])
+        bad |= values <= lower if strict else values < lower
+    if data.get("screening_upper") is not None:
+        upper = float(data["screening_upper"])
+        bad |= values >= upper if strict else values > upper
+    title = "判定量（事件统计值，非瞬时曲线）" if scalar else "判定信号（红点为越界采样）"
+    return PlotPanel(
+        title, units, [PlotLine(str(measure), values[mask], (36, 104, 179))],
+        thresholds=thresholds, highlight=(bad & window & np.isfinite(values))[mask],
+    )
 
 
 def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List[PlotPanel]:
@@ -475,7 +632,7 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         ],
     )
     if frame.has("acceleration"):
-        jerk = derivative(frame.time_s.astype(float), time_window_moving_average(frame.time_s.astype(float), frame.col("acceleration").astype(float), 0.25))
+        jerk = jerk_from_acceleration(frame.time_s.astype(float), frame.col("acceleration").astype(float))
         acc_lines.append(PlotLine("jerk", jerk[mask], (111, 66, 193)))
     if acc_lines:
         panels.append(PlotPanel("加速度 / jerk", "m/s2 / m/s3", acc_lines))
@@ -485,8 +642,8 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         speed_lines.append(PlotLine("自车车速", frame.col("ego_speed").astype(float)[mask], (5, 150, 105), step=True))
     if frame.has("set_speed"):
         speed_lines.append(PlotLine("SetSpeed", frame.col("set_speed").astype(float)[mask], (107, 114, 128), step=True))
-    if frame.has("curv_speed_limit"):
-        speed_lines.append(PlotLine("弯道限速", frame.col("curv_speed_limit").astype(float)[mask] * speed_limit_scale(frame), (220, 38, 38), step=True))
+    if frame.has("curv_speed_limit") and np.any(np.isfinite(frame.col("curv_speed_limit")[mask])):
+        speed_lines.append(PlotLine("弯道限速", frame.col("curv_speed_limit").astype(float)[mask] * 3.6, (220, 38, 38), step=True))
     if speed_lines:
         panels.append(PlotPanel("车速 / 设速", "kph", speed_lines))
 
@@ -542,7 +699,28 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         ],
     )
     if state_lines:
-        panels.append(PlotPanel("状态信号", "enum", state_lines, fixed_range=(-0.3, 6.3)))
+        panels.append(PlotPanel("状态信号", "enum", state_lines))
+
+    if "rollback" in metric:
+        for title, unit, specs in (
+            ("溜车判定：四轮方向 / 挡位", "enum", [
+                ("左前方向", "wheel_dir_lf", 1.0, (36, 104, 179), True),
+                ("右前方向", "wheel_dir_rf", 1.0, (111, 66, 193), True),
+                ("左后方向", "wheel_dir_lr", 1.0, (5, 150, 105), True),
+                ("右后方向", "wheel_dir_rr", 1.0, (245, 158, 11), True),
+                ("挡位", "gear", 1.0, (220, 38, 38), True),
+            ]),
+            ("溜车判定：轮速 / 非驱动轮车速", "raw / kph", [
+                ("左前轮速", "wheel_speed_lf", 1.0, (36, 104, 179), False),
+                ("右前轮速", "wheel_speed_rf", 1.0, (111, 66, 193), False),
+                ("左后轮速", "wheel_speed_lr", 1.0, (5, 150, 105), False),
+                ("右后轮速", "wheel_speed_rr", 1.0, (245, 158, 11), False),
+                ("非驱动轮车速", "ego_speed_non_driven", 1.0, (220, 38, 38), False),
+            ]),
+        ):
+            lines = signal_lines(frame, mask, specs)
+            if lines:
+                panels.append(PlotPanel(title, unit, lines))
 
     return prioritize_panels(metric_name, panels)
 
@@ -604,14 +782,6 @@ def signal_lines(
     return lines
 
 
-def speed_limit_scale(frame: SignalFrame) -> float:
-    values = frame.col("curv_speed_limit", np.nan).astype(float)
-    finite = values[np.isfinite(values)]
-    if finite.size == 0:
-        return 1.0
-    return 3.6 if float(np.nanpercentile(finite, 95)) < 80.0 else 1.0
-
-
 def draw_panel(
     draw: ImageDraw.ImageDraw,
     box: Tuple[int, int, int, int],
@@ -624,8 +794,13 @@ def draw_panel(
     x0, y0, x1, y1 = box
     draw.rectangle(box, fill=(255, 255, 255), outline=(209, 213, 219))
     draw.text((x0 + 10, y0 + 7), panel.title, fill=(17, 24, 39), font=fonts.header)
-    plot_x0, plot_y0, plot_x1, plot_y1 = x0 + 92, y0 + 36, x1 - 18, y1 - 28
+    plot_x0, plot_y0, plot_x1, plot_y1 = x0 + 92, y0 + 65, x1 - 18, y1 - 28
     ymin, ymax = panel.fixed_range or y_range(panel.lines)
+    if panel.thresholds:
+        ymin = min(ymin, *(value for _label, value in panel.thresholds))
+        ymax = max(ymax, *(value for _label, value in panel.thresholds))
+        padding = max((ymax - ymin) * 0.1, 0.1)
+        ymin, ymax = ymin - padding, ymax + padding
     if math.isclose(ymin, ymax):
         ymax = ymin + 1.0
 
@@ -646,12 +821,30 @@ def draw_panel(
         draw.text((x - 24, plot_y1 + 7), "%.1fs" % time_value, fill=(75, 85, 99), font=fonts.small)
     draw.line((plot_x0, plot_y1, plot_x1, plot_y1), fill=(160, 170, 185))
     draw.line((plot_x0, plot_y0, plot_x0, plot_y1), fill=(160, 170, 185))
-    draw.text((x0 + 11, y0 + 30), panel.unit, fill=(75, 85, 99), font=fonts.small)
+    draw.text((x0 + 11, y0 + 34), panel.unit, fill=(75, 85, 99), font=fonts.small)
 
     for line in panel.lines:
         draw_series(draw, t, line, ymin, ymax, (plot_x0, plot_y0, plot_x1, plot_y1))
+    for label, value in panel.thresholds:
+        y = plot_y1 - (value - ymin) / (ymax - ymin) * (plot_y1 - plot_y0)
+        draw.line((plot_x0, y, plot_x1, y), fill=(220, 38, 38), width=2)
+        draw.text((plot_x1 - 150, y - 15), "%s %g" % (label, value),
+                  fill=(190, 24, 45), font=fonts.small)
+    if panel.highlight is not None:
+        for timestamp, sample in zip(t[panel.highlight], panel.lines[0].values[panel.highlight]):
+            x = x_scale(float(timestamp), t, plot_x0, plot_x1)
+            y = plot_y1 - (float(sample) - ymin) / (ymax - ymin) * (plot_y1 - plot_y0)
+            draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=(220, 38, 38))
+    for index, (label, timestamp) in enumerate(panel.markers):
+        if not float(t[0]) <= timestamp <= float(t[-1]):
+            continue
+        x = x_scale(timestamp, t, plot_x0, plot_x1)
+        draw.line((x, plot_y0, x, plot_y1), fill=(190, 24, 45), width=1)
+        if panel.thresholds or panel.title.startswith("状态"):
+            draw.text((min(x + 2, plot_x1 - 170), plot_y0 + 2 + (index % 2) * 14),
+                      "%s %.3fs" % (label, timestamp), fill=(190, 24, 45), font=fonts.small)
 
-    legend_x, legend_y = plot_x0, y0 + 9
+    legend_x, legend_y = plot_x0, y0 + 33
     for line in panel.lines:
         draw.line((legend_x, legend_y + 8, legend_x + 23, legend_y + 8), fill=line.color, width=4)
         draw.text((legend_x + 29, legend_y), line.label, fill=(40, 48, 62), font=fonts.small)
@@ -710,8 +903,8 @@ def y_range(lines: Sequence[PlotLine]) -> Tuple[float, float]:
             values.extend(finite.tolist())
     if not values:
         return -1.0, 1.0
-    low = float(np.nanpercentile(values, 2))
-    high = float(np.nanpercentile(values, 98))
+    low = float(np.min(values))
+    high = float(np.max(values))
     if math.isclose(low, high):
         pad = max(abs(low) * 0.1, 1.0)
         return low - pad, high + pad
@@ -736,6 +929,8 @@ def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
         r"C:\Windows\Fonts\msyhbd.ttc" if bold else r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simhei.ttf",
         r"C:\Windows\Fonts\simsun.ttc",
+        str(Path(os.sep).joinpath("usr", "share", "fonts", "opentype", "noto", "NotoSansCJK-Regular.ttc")),
+        str(Path(os.sep).joinpath("usr", "share", "fonts", "truetype", "wqy", "wqy-zenhei.ttc")),
         r"C:\Windows\Fonts\arialbd.ttf" if bold else r"C:\Windows\Fonts\arial.ttf",
     ]
     for path_text in candidates:

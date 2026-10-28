@@ -105,6 +105,8 @@ class J6BForm(QWidget):
 
         self.report_name_edit = QLineEdit("Longitudinal_CPI_Report")
         form.addRow("报告名称：", self.report_name_edit)
+        self.bad_case_signal_plots_check = QCheckBox("挖掘后为 Bad Case 报告生成信号图（增加耗时及文件体积）")
+        form.addRow("信号图：", self.bad_case_signal_plots_check)
 
         self.enabled_metrics_edit = QLineEdit("all")
         self.enabled_metrics_edit.setPlaceholderText("all 或逗号分隔的指标名列表")
@@ -208,6 +210,7 @@ class J6BForm(QWidget):
             date_range=self.date_range_edit.text().strip(),
             output_dir=self.output_dir_edit.text().strip(),
             report_name=self.report_name_edit.text().strip(),
+            bad_case_signal_plots=self.bad_case_signal_plots_check.isChecked(),
             enabled_metrics=self.enabled_metrics_edit.text().strip() or "all",
             metric_signal_scope=self.scope_combo.currentText(),
             auto_compare=self.auto_compare_check.isChecked(),
@@ -231,6 +234,7 @@ class J6BForm(QWidget):
         self.date_range_edit.setText(spec.date_range)
         self.output_dir_edit.setText(spec.output_dir)
         self.report_name_edit.setText(spec.report_name)
+        self.bad_case_signal_plots_check.setChecked(spec.bad_case_signal_plots)
         self.enabled_metrics_edit.setText(spec.enabled_metrics)
         index = self.scope_combo.findText(spec.metric_signal_scope)
         if index >= 0:

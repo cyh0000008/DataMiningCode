@@ -74,6 +74,12 @@ python J6B_UnifiedMining/DataMining.py <临时生成的config.json>
 同名文件追加序号，不覆盖历史报告；自动对比使用该副本，基线也从其文件名识别表头。
 不再提供表头覆盖输入。旧预设的 Target 车型和版本自动迁移，日期始终使用挖掘日期范围。
 
+J6B 运行参数另有“信号图”复选框（默认关闭），勾选后在挖掘结束时为筛选后的
+Bad Case 自动绘制并嵌入信号图。选项随预设保存；图中展示实际筛选阈值、
+数值型指标的越界点，以及事件类指标的时间窗口/关键时刻。
+该功能需要 J6B Python 环境安装 Pillow；生成时间和报告体积会增加。
+完整 PNG 与报告一起保存在本次输出目录。新增复选框需要重新打包 UnifiedApp 才会出现在旧应用中。
+
 ### MMT 挖掘
 
 对应 [MMT_UnifiedMining/DataMining.py](../MMT_UnifiedMining/DataMining.py)，

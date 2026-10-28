@@ -137,7 +137,12 @@ def main(argv: List[str]) -> int:
     bad_case_report_path = write_bad_case_report(actual_output_dir, bad_case_config_path, metrics)
     print("Report written: %s" % report_path)
     if bad_case_report_path is not None:
+        if config.get("bad_case_signal_plots", False):
+            from bad_case_image_report import generate_report_with_images
+            generate_report_with_images(bad_case_report_path, bad_case_report_path, print, config=config)
         print("Bad case report written: %s" % bad_case_report_path)
+    elif config.get("bad_case_signal_plots", False):
+        print("Signal plots skipped: Bad Case extraction is disabled or its configuration is missing.")
     return 0
 
 
@@ -153,6 +158,8 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     if "powertrain_type" not in config:
         raise KeyError("config.json must contain 'powertrain_type' ('ICE', 'PHEV' or 'BEV')")
     config["powertrain_type"] = normalize_powertrain_type(config["powertrain_type"])
+    if not isinstance(config.get("bad_case_signal_plots", False), bool):
+        raise ValueError("bad_case_signal_plots must be true or false")
     date_range = normalize_date_range(config.get("date", ""))
     if date_range:
         parse_date_range(date_range)

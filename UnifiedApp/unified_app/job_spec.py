@@ -53,6 +53,7 @@ class J6BJobSpec:
     report_name: str = ""
     enabled_metrics: str = "all"
     metric_signal_scope: str = "all"
+    bad_case_signal_plots: bool = False
     auto_compare: bool = False
     compare_base_path: str = ""
     compare_details_sheet: bool = False

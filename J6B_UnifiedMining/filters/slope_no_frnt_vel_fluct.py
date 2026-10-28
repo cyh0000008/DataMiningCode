@@ -40,6 +40,7 @@ class SlopeNoFrntVelFluctMetric(BaseMetric):
                 continue
             severity = severity_outside(value, lower, upper, self.severity_base)
             extra = dict(extra)
+            extra.update(screening_measure=self.measure, screening_value=value, screening_lower=lower, screening_upper=upper)
             extra[self.measure] = round(float(value), 6)
             if value_time is not None:
                 extra["value_time_s"] = round(float(value_time), 3)

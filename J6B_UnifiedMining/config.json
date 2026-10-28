@@ -11,6 +11,7 @@
     "all"
   ],
   "metric_signal_scope": "all",
+  "bad_case_signal_plots": false,
   "metric_signal_scope_options": [
     "all",
     "debugcan_only",

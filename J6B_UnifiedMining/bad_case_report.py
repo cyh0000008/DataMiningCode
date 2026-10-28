@@ -31,6 +31,7 @@ BAD_CASE_HEADERS = [
     "开始时间(s)",
     "结束时间(s)",
     "指标Key",
+    "判定数据",
 ]
 
 
@@ -126,6 +127,7 @@ def read_metric_bad_cases(event_path: Path, fallback_category: str) -> List[Dict
                 "message": str(event.get("message", "")),
                 "start_s": event.get("start_s", ""),
                 "end_s": event.get("end_s", ""),
+                "values": event.get("values", {}),
             })
     return cases
 
@@ -183,6 +185,7 @@ def write_bad_case_xlsx(rows: List[Mapping[str, Any]], output_path: Path) -> Non
                 row.get("start_s", ""),
                 row.get("end_s", ""),
                 row.get("metric_name", ""),
+                json.dumps(row.get("values", {}), ensure_ascii=False),
             ])
 
     sheet.freeze_panes = "A2"
