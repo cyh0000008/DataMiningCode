@@ -54,6 +54,8 @@ def prepare_j6b_config(template_path: Path, spec: J6BJobSpec) -> Path:
 
     data["powertrain_type"] = normalize_powertrain_type(spec.powertrain_type)
     data["bad_case_signal_plots"] = spec.bad_case_signal_plots
+    data["lcc_sync_check"] = spec.lcc_sync_check
+    data["lcc_sync_deferred"] = True
     if spec.input_paths:
         data["input_path"] = list(spec.input_paths)
     if spec.date_range.strip() or spec.date_range == "":

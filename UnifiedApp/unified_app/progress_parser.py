@@ -77,7 +77,7 @@ def parse_line(kind: str, line: str) -> ProgressUpdate:
         update.done_marker = True
         update.percent = 100
 
-    if kind == "j6b":
+    if kind in ("j6b", "lcc_sync"):
         if line.startswith("LCC_SYNC_RESULT: "):
             payload = json.loads(line[len("LCC_SYNC_RESULT: "):])
             if (

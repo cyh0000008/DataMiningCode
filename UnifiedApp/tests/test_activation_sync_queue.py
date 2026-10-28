@@ -13,6 +13,7 @@ from PySide6.QtCore import QEventLoop, QTimer, QUrl
 from PySide6.QtWidgets import QApplication
 
 from UnifiedApp.unified_app.job_manager import Job, JobManager, STATUS_SUCCESS
+from UnifiedApp.unified_app.job_spec import CompareJobSpec
 from UnifiedApp.unified_app.progress_parser import parse_line
 from UnifiedApp.unified_app.ui.job_panel import JobPanel, COL_SYNC, COL_SYNC_PLOT
 
@@ -22,6 +23,107 @@ J6B = ROOT / "J6B_UnifiedMining"
 
 
 class ActivationSyncTests(unittest.TestCase):
+    def test_scheduling_without_comparison_and_failure_states(self):
+        app = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as folder:
+            for compare_status in (None, "失败", "已取消"):
+                manager = JobManager()
+                source = Job(
+                    "source", "j6b", "mining", [sys.executable], J6B,
+                    report_path=Path(folder) / "report.xlsx", pending_sync=True,
+                )
+                manager._jobs[source.id] = source
+                with patch.object(manager, "_try_start_next"):
+                    if compare_status is None:
+                        manager._on_finished(source.id, 0, None)
+                    else:
+                        compare = Job(
+                            "compare", "compare", "compare", [], J6B,
+                            status=compare_status, sync_source_job_id=source.id,
+                        )
+                        manager._finish_sync_dependency(compare)
+                    children = [job for job in manager.jobs() if job.kind == "lcc_sync"]
+                    if compare_status == "已取消":
+                        self.assertEqual(children, [])
+                        self.assertEqual(source.sync_status, "未完成")
+                        continue
+                    self.assertEqual(len(children), 1)
+                    self.assertFalse(source.pending_sync)
+                    self.assertIn("--mining-manifest", children[0].command)
+                    self.assertEqual(source.sync_status, "排队中")
+                    manager.cancel(children[0].id)
+                    self.assertEqual(source.sync_status, "未完成")
+                    self.assertIsNone(source.sync_plot_path)
+            manager = JobManager()
+            source = Job("source", "j6b", "mining", [], J6B, status="成功")
+            child = Job("sync", "lcc_sync", "sync", [], J6B,
+                        status="失败", sync_source_job_id=source.id)
+            manager._jobs = {source.id: source, child.id: child}
+            manager._finish_sync_dependency(child)
+            self.assertEqual(source.status, "成功")
+            self.assertEqual(source.sync_status, "检查失败")
+            self.assertEqual(child.sync_status, "检查失败")
+
+    def test_discovery_skips_unrelated_datasets_and_bounds_reads(self):
+        result = subprocess.run(
+            [sys.executable, "-c", r'''
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+import h5py
+import numpy as np
+import activation_sync_check as sync
+
+class Dataset:
+    def __getitem__(self, selection):
+        assert selection == slice(None, 50000), selection
+        return np.array([0, 1])
+
+assert sync.signal_value_score(Dataset(), ({0, 1},)) == 0
+with tempfile.TemporaryDirectory() as folder:
+    path = Path(folder) / "alternate_channels.h5"
+    with h5py.File(path, "w") as h5:
+        for i in range(50):
+            group = h5.create_group(f"ch8/ETH/DBC/0x{i:X}_Other/signals")
+            for j in range(20):
+                group.create_dataset(f"unused_{j}", data=[0, 1])
+        for message, signal in (
+            ("0x194_ACC_AxlTrqReq", "ILCCC_Act"),
+            ("0x3D9_Reserved_10", "Debug_uint_Reserved_11"),
+        ):
+            for channel, values in (("ch8", [8, 8, 8, 8]), ("ch9", [0, 1, 1, 0])):
+                group = h5.create_group(f"{channel}/Network/DBC/{message}")
+                group.create_dataset("timestamp", data=[0., 1., 2., 3.])
+                group.create_dataset("signals/" + signal, data=values)
+    with h5py.File(path, "r") as h5:
+        expected = []
+        h5.visititems(lambda name, obj: expected.append(name) if (
+            isinstance(obj, h5py.Dataset) and
+            name.endswith(("/signals/ILCCC_Act", "/signals/Debug_uint_Reserved_11"))
+        ) else None)
+        assert set(sync.discover_signal_paths(h5, ("ILCCC_Act", "Debug_uint_Reserved_11"))) == set(expected)
+    original_getitem = h5py.Group.__getitem__
+    def checked_getitem(group, name):
+        assert "unused_" not in str(name), name
+        return original_getitem(group, name)
+    with patch.object(h5py.Group, "visititems", side_effect=AssertionError("full tree traversal")), \
+         patch.object(h5py.Group, "__getitem__", checked_getitem), \
+         patch.object(sync, "discover_signal_paths", wraps=sync.discover_signal_paths) as discover:
+        result = sync.read_file_signals(path)
+        assert discover.call_count == 1
+        assert result.bus_value.tolist() == [0, 1, 1, 0]
+        assert result.ethernet_raw_value.tolist() == [0, 1, 1, 0]
+    with patch.object(sync, "signal_value_score", side_effect=AssertionError("redundant scoring")):
+        with h5py.File(path, "r") as h5:
+            assert sync.choose_preferred_signal_path(
+                h5, ["ch9/Network/DBC/0x194_ACC_AxlTrqReq/signals/ILCCC_Act"], ({0, 1},),
+            ).startswith("ch9/")
+'''],
+            cwd=J6B, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_exact_files_thresholds_and_no_samples(self):
         result = subprocess.run(
             [sys.executable, "-c", r'''
@@ -169,18 +271,36 @@ with tempfile.TemporaryDirectory() as folder:
                             "abs_active": "sample/signals/abs_active",
                             "acceleration": "sample/signals/acceleration"},
                 "enabled_metrics": ["acc_exit_after_abs"], "output_dir": str(work / "run"),
+                "lcc_sync_check": True, "lcc_sync_deferred": True,
             }
             cfg = work / "config.json"
             cfg.write_text(json.dumps(config), encoding="utf-8")
             loop = QEventLoop()
-            manager.job_finished.connect(loop.quit)
+            manager.job_finished.connect(
+                lambda jid: loop.quit() if manager.get_job(jid).kind == "lcc_sync" else None
+            )
             timer = QTimer()
             timer.setSingleShot(True)
             timer.timeout.connect(loop.quit)
             timer.start(60000)
+            compare_dir = work / "compare"
+            compare_dir.mkdir()
+            (compare_dir / "mpi_cpi_compare.py").write_text(
+                "from pathlib import Path\nimport sys\n"
+                "target = Path(sys.argv[sys.argv.index('--target') + 1])\n"
+                "assert target.is_file()\n"
+                "assert not (target.parent / 'lcc_activation_sync.png').exists()\n"
+                "(target.parent / 'comparison_finished.txt').write_text('done')\n",
+                encoding="utf-8",
+            )
             job_id = manager._submit(
                 "j6b", "real mining", [sys.executable, str(J6B / "DataMining.py"), str(cfg)],
-                J6B, [],
+                J6B, [], pending_compare={
+                    "python_exe": sys.executable, "compare_dir": compare_dir,
+                    "spec": CompareJobSpec(report_profile="J6B"),
+                },
+                report_archive={"archive_dir": "", "vehicle": "TEST", "date": "20261028", "version": "V1"},
+                pending_sync=True,
             )
             loop.exec()
             timer.stop()
@@ -192,6 +312,25 @@ with tempfile.TemporaryDirectory() as folder:
                 self.assertTrue(job.report_path.is_file())
                 self.assertEqual(job.sync_plot_path.parent, job.report_path.parent)
                 self.assertEqual(panel.table.item(0, COL_SYNC).text(), "是")
+                jobs = manager.jobs()
+                self.assertEqual([item.kind for item in jobs], ["j6b", "compare", "lcc_sync"])
+                self.assertEqual(jobs[1].status, STATUS_SUCCESS, "\n".join(jobs[1].log_lines))
+                self.assertGreaterEqual(jobs[2].started_at, jobs[1].finished_at)
+                self.assertTrue((job.report_path.parent / "comparison_finished.txt").is_file())
+                # A disabled run still produces its normal report but no diagnostic.
+                config["lcc_sync_check"] = False
+                config["lcc_sync_deferred"] = False
+                config["output_dir"] = str(work / "disabled")
+                cfg.write_text(json.dumps(config), encoding="utf-8")
+                disabled = subprocess.run(
+                    [sys.executable, str(J6B / "DataMining.py"), str(cfg)], cwd=J6B,
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                    capture_output=True, encoding="utf-8", timeout=30,
+                )
+                self.assertEqual(disabled.returncode, 0, disabled.stdout + disabled.stderr)
+                self.assertIn("LCC sync check disabled.", disabled.stdout)
+                self.assertIn("Report written:", disabled.stdout)
+                self.assertFalse(list((work / "disabled").rglob("lcc_activation_sync.*")))
             finally:
                 if job.process is not None and job.process.state() != job.process.ProcessState.NotRunning:
                     job.process.kill()

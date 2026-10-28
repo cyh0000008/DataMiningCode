@@ -23,15 +23,18 @@ class J6BSignalPlotTests(unittest.TestCase):
         form = J6BForm(Settings, manager)
         try:
             self.assertFalse(form.bad_case_signal_plots_check.isChecked())
+            self.assertTrue(form.lcc_sync_check.isChecked())
             form.input_list.addItem(str(ROOT))
             form.vehicle_edit.setText("SAMPLE")
             form.software_version_edit.setText("TEST")
             form.date_range_edit.setText("20261028")
             for enabled in (True, False):
                 form.bad_case_signal_plots_check.setChecked(enabled)
+                form.lcc_sync_check.setChecked(enabled)
                 spec = J6BJobSpec.from_dict(json.loads(json.dumps(form._collect_spec().to_dict())))
                 form._apply_spec(spec)
                 self.assertEqual(form.bad_case_signal_plots_check.isChecked(), enabled)
+                self.assertEqual(form.lcc_sync_check.isChecked(), enabled)
                 with patch.object(manager, "_try_start_next"):
                     job_id = manager.submit_j6b(
                         sys.executable, ROOT / "J6B_UnifiedMining",
@@ -41,9 +44,13 @@ class J6BSignalPlotTests(unittest.TestCase):
                 try:
                     config = json.loads(job.temp_files[0].read_text(encoding="utf-8"))
                     self.assertIs(config["bad_case_signal_plots"], enabled)
+                    self.assertIs(config["lcc_sync_check"], enabled)
+                    self.assertIs(config["lcc_sync_deferred"], True)
+                    self.assertEqual(job.sync_status, "等待报告完成" if enabled else "未启用")
                 finally:
                     manager._cleanup_temp_files(job)
             self.assertFalse(J6BJobSpec.from_dict({}).bad_case_signal_plots)
+            self.assertTrue(J6BJobSpec.from_dict({}).lcc_sync_check)
         finally:
             form.close()
 

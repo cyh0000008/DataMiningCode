@@ -88,6 +88,17 @@ class SyncStats:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     start_time = time.perf_counter()
     args = parse_args(argv)
+    if args.mining_manifest is not None:
+        manifest_path = args.mining_manifest.expanduser().resolve()
+        with manifest_path.open(encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        files = manifest.get("h5_files") if isinstance(manifest, dict) else None
+        if not isinstance(files, list) or not files or not all(isinstance(path, str) and path for path in files):
+            raise ValueError("run_manifest.json must contain a non-empty h5_files list")
+        write_mining_sync_report([Path(path) for path in files], manifest_path.parent)
+        return 0
+    if args.input_dir is None:
+        raise ValueError("input_dir or --mining-manifest is required")
     input_dir = args.input_dir.expanduser().resolve()
     if not input_dir.exists() or not input_dir.is_dir():
         raise FileNotFoundError(f"数据文件夹不存在：{input_dir}")
@@ -110,7 +121,8 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="检查总线数据_标志位与以太网数据_激活标志位的同步性，并生成中文版 PNG。",
     )
-    parser.add_argument("input_dir", type=Path, help="h5 数据文件夹路径，会递归扫描所有 .h5/.hdf5 文件")
+    parser.add_argument("input_dir", nargs="?", type=Path, help="h5 数据文件夹路径，会递归扫描所有 .h5/.hdf5 文件")
+    parser.add_argument("--mining-manifest", type=Path, help="使用本次挖掘清单，在报告目录生成诊断结果")
     parser.add_argument(
         "output",
         nargs="?",
@@ -164,9 +176,10 @@ def run_check(
         file_start_time = time.perf_counter()
         log(f"[{file_index}/{len(h5_files)}] 读取文件：{h5_file.name}")
         signals = read_file_signals(h5_file)
+        read_duration_s = time.perf_counter() - file_start_time
         if signals is None:
             skipped_files += 1
-            log("  跳过：缺少检查所需信号或时间戳")
+            log(f"  跳过：缺少检查所需信号或时间戳，查找/读取用时 {read_duration_s:.2f}秒")
             continue
         file_signals[h5_file] = signals
         used_files += 1
@@ -216,6 +229,7 @@ def run_check(
             f"{ETHERNET_LABEL}边沿 {len(ethernet_edge_time)}，"
             f"匹配边沿 {file_match_count}，"
             f"采样点不一致 {mismatch}/{total}，"
+            f"查找/读取 {read_duration_s:.2f}秒，"
             f"用时 {time.perf_counter() - file_start_time:.2f}秒"
         )
         if keep_examples_only:
@@ -290,7 +304,9 @@ def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict
             f"最大绝对时间差 {max_abs_lag_s * 1000:.3f} ms"
         )
     detail += f"；文件 {stats.total_files}，有效 {stats.used_files}，跳过 {stats.skipped_files}"
+    plot_start = time.perf_counter()
     draw_png(stats)
+    log(f"LCC同步结果图生成完成，用时 {time.perf_counter() - plot_start:.2f}秒")
     result: Dict[str, object] = {
         "has_large_delay": exceeded_count > 0,
         "matched_edges": len(stats.matches),
@@ -320,12 +336,19 @@ def collect_h5_files(input_dir: Path) -> List[Path]:
 
 def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
     with h5py.File(h5_file, "r") as h5:
+        discovered_paths = None
+        if not all(
+            any(path in h5 for path in candidates)
+            for candidates in (BUS_SIGNAL_CANDIDATES, ETHERNET_SIGNAL_CANDIDATES)
+        ):
+            discovered_paths = discover_signal_paths(h5, ("ILCCC_Act", "Debug_uint_Reserved_11"))
         bus_path = find_signal_path(
             h5,
             BUS_SIGNAL_CANDIDATES,
             signal_name="ILCCC_Act",
             required_fragments=("0x194", "ACC_AxlTrqReq"),
             preferred_value_sets=({0, 1},),
+            discovered_paths=discovered_paths,
         )
         ethernet_path = find_signal_path(
             h5,
@@ -333,6 +356,7 @@ def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
             signal_name="Debug_uint_Reserved_11",
             required_fragments=("0x3D9", "Reserved_10"),
             preferred_value_sets=({0, 1}, {4, 5}),
+            discovered_paths=discovered_paths,
         )
         if bus_path is None or ethernet_path is None:
             return None
@@ -357,12 +381,35 @@ def read_file_signals(h5_file: Path) -> Optional[FileSignals]:
     )
 
 
+def discover_signal_paths(h5: h5py.File, signal_names: Sequence[str]) -> List[str]:
+    """Inspect message groups without opening every unrelated signal dataset."""
+    matches: List[str] = []
+    pending = [h5["/"]]
+    visited = set()
+    while pending:
+        group = pending.pop()
+        address = h5py.h5o.get_info(group.id).addr
+        if address in visited:
+            continue
+        visited.add(address)
+        for name in group:
+            if name == "signals":
+                for signal_name in signal_names:
+                    path = (group.name.rstrip("/") + "/signals/" + signal_name).lstrip("/")
+                    if path in h5 and isinstance(h5[path], h5py.Dataset):
+                        matches.append(path)
+            elif group.get(name, getclass=True) is h5py.Group:
+                pending.append(group[name])
+    return matches
+
+
 def find_signal_path(
     h5: h5py.File,
     candidates: Sequence[str],
     signal_name: str,
     required_fragments: Sequence[str],
     preferred_value_sets: Sequence[Sequence[int]] = (),
+    discovered_paths: Optional[Sequence[str]] = None,
 ) -> Optional[str]:
     matched_candidates: List[str] = []
     for candidate in candidates:
@@ -371,18 +418,12 @@ def find_signal_path(
     if matched_candidates:
         return choose_preferred_signal_path(h5, matched_candidates, preferred_value_sets)
 
-    matches: List[str] = []
-
-    def visitor(name: str, obj: h5py.Dataset) -> None:
-        if not isinstance(obj, h5py.Dataset):
-            return
-        normalized = name.replace("\\", "/")
-        if not normalized.endswith("/signals/" + signal_name):
-            return
-        if all(fragment in normalized for fragment in required_fragments):
-            matches.append(normalized)
-
-    h5.visititems(visitor)
+    paths = discovered_paths if discovered_paths is not None else discover_signal_paths(h5, (signal_name,))
+    matches = [
+        path for path in paths
+        if path.endswith("/signals/" + signal_name)
+        and all(fragment in path for fragment in required_fragments)
+    ]
     if not matches:
         return None
 
@@ -405,7 +446,7 @@ def choose_preferred_signal_path(
     ordered_paths: Sequence[str],
     preferred_value_sets: Sequence[Sequence[int]],
 ) -> str:
-    if not preferred_value_sets:
+    if not preferred_value_sets or len(ordered_paths) == 1:
         return ordered_paths[0]
 
     preferred_scores = [
@@ -416,11 +457,9 @@ def choose_preferred_signal_path(
 
 
 def signal_value_score(dataset: h5py.Dataset, preferred_value_sets: Sequence[Sequence[int]]) -> int:
-    values = np.asarray(dataset[:])
+    values = np.asarray(dataset[:50000])
     if values.size == 0:
         return len(preferred_value_sets) + 2
-    if values.size > 50000:
-        values = values[:50000]
     unique_values = {int(value) for value in np.unique(values)}
     for index, preferred_values in enumerate(preferred_value_sets):
         preferred_set = set(preferred_values)
@@ -440,6 +479,8 @@ def sort_by_time(time_values: np.ndarray, signal_values: np.ndarray) -> Tuple[np
     finite = np.isfinite(time_array)
     time_array = time_array[finite]
     value_array = value_array[finite]
+    if len(time_array) < 2 or np.all(time_array[1:] >= time_array[:-1]):
+        return time_array, value_array
     order = np.argsort(time_array, kind="mergesort")
     return time_array[order], value_array[order]
 

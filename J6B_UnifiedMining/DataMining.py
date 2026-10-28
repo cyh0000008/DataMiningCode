@@ -143,9 +143,13 @@ def main(argv: List[str]) -> int:
         print("Bad case report written: %s" % bad_case_report_path)
     elif config.get("bad_case_signal_plots", False):
         print("Signal plots skipped: Bad Case extraction is disabled or its configuration is missing.")
-    from activation_sync_check import write_mining_sync_report
-    print("Checking LCC bus/Ethernet activation sync...", flush=True)
-    write_mining_sync_report([Path(path) for path in h5_files], actual_output_dir)
+    if config.get("lcc_sync_check", True) and not config.get("lcc_sync_deferred", False):
+        from activation_sync_check import write_mining_sync_report
+        print("Checking LCC bus/Ethernet activation sync...", flush=True)
+        write_mining_sync_report([Path(path) for path in h5_files], actual_output_dir)
+    else:
+        print("LCC sync check deferred to task queue." if config.get("lcc_sync_check", True)
+              else "LCC sync check disabled.")
     return 0
 
 
@@ -163,6 +167,9 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     config["powertrain_type"] = normalize_powertrain_type(config["powertrain_type"])
     if not isinstance(config.get("bad_case_signal_plots", False), bool):
         raise ValueError("bad_case_signal_plots must be true or false")
+    for key in ("lcc_sync_check", "lcc_sync_deferred"):
+        if key in config and not isinstance(config[key], bool):
+            raise ValueError("%s must be true or false" % key)
     date_range = normalize_date_range(config.get("date", ""))
     if date_range:
         parse_date_range(date_range)

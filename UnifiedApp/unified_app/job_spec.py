@@ -10,6 +10,7 @@ import warnings
 JOB_KIND_J6B = "j6b"
 JOB_KIND_MMT = "mmt"
 JOB_KIND_COMPARE = "compare"
+JOB_KIND_LCC_SYNC = "lcc_sync"
 POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV")
 
 
@@ -26,6 +27,7 @@ JOB_KIND_LABELS = {
     JOB_KIND_J6B: "J6B 挖掘",
     JOB_KIND_MMT: "MMT 挖掘",
     JOB_KIND_COMPARE: "对比报告",
+    JOB_KIND_LCC_SYNC: "LCC延迟检查",
 }
 
 
@@ -54,6 +56,7 @@ class J6BJobSpec:
     enabled_metrics: str = "all"
     metric_signal_scope: str = "all"
     bad_case_signal_plots: bool = False
+    lcc_sync_check: bool = True
     auto_compare: bool = False
     compare_base_path: str = ""
     compare_details_sheet: bool = False

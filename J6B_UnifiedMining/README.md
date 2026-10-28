@@ -17,12 +17,17 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 - `skipped_metrics.csv` 记录因缺失信号而未运行的指标，包含指标名称、文件路径、缺失字段和缺失 H5 路径
 - 一个汇总 XLSX 报告，汇总页和明细页都会标注 `指标类型`：CPI 或 MPI
 - `run_manifest.json` 记录本次输入和指标列表
-- `lcc_activation_sync.png` / `lcc_activation_sync.json`：每次挖掘后自动生成 LCC 总线/ETH 同步诊断，
+- `lcc_activation_sync.png` / `lcc_activation_sync.json`：启用 `lcc_sync_check`（默认 true）时生成 LCC 总线/ETH 同步诊断，
   使用本次挖掘经过路径及日期筛选的文件和两路原始报文时间戳。开启/退出任一匹配边沿的绝对时间差
   严格大于 200 ms 判为有较大延迟；等于 200 ms 不计超限。无有效样本时结果为“否”并明确注明原因，
   不代表已验证同步正常。GUI 任务队列显示是/否和结果图链接，不改变 CPI/MPI 统计。
   沿用独立检查的同向最近边沿匹配，最大窗口 ±10 s，不跨文件配对，不自动校准时间轴。
-  需要 Pillow 及 Windows 中文字体；检查异常显式报错，已经生成的挖掘报告保留。
+  命令行直接挖掘时在所有挖掘报告及信号图完成后执行；GUI 通过内部 `lcc_sync_deferred=true`
+  将检查移至自动对比报告之后，作为独立任务运行，结果回填原 J6B 行。
+  关闭 `lcc_sync_check` 不读取延迟信号、不生成诊断文件，原有指标及报告照常输出。
+  需要 Pillow 及 Windows 中文字体；检查异常显式报错，已经生成的报告保留。
+  信号候选路径未命中时，两路共用一次按报文组查找，跳过无关信号数据集；
+  多候选优先级评分最多读取前 50000 个采样，单候选不重复评分读取。
 
 `bad_case_report.xlsx` 的“指标名称”使用与对比报告一致的中文名称，
 另保留“指标Key”列用于追溯和曲线绘图。配置、CSV/JSON 文件名及汇总报告代码名保持不变。

@@ -21,6 +21,7 @@ from .job_spec import (
     JOB_KIND_COMPARE,
     JOB_KIND_J6B,
     JOB_KIND_MMT,
+    JOB_KIND_LCC_SYNC,
     JOB_KIND_LABELS,
     CompareJobSpec,
     J6BJobSpec,
@@ -68,6 +69,8 @@ class Job:
     sync_status: str = ""
     sync_detail: str = ""
     sync_plot_path: Optional[Path] = None
+    pending_sync: bool = False
+    sync_source_job_id: Optional[str] = None
 
     @property
     def kind_label(self) -> str:
@@ -131,7 +134,9 @@ class JobManager(QObject):
             spec.software_version,
         )
         return self._submit(
-            JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare, report_archive
+            JOB_KIND_J6B, title, command, j6b_dir, [temp_config], pending_compare, report_archive,
+            pending_sync=spec.lcc_sync_check,
+            sync_status="等待报告完成" if spec.lcc_sync_check else "未启用",
         )
 
     def submit_mmt(
@@ -172,7 +177,10 @@ class JobManager(QObject):
             JOB_KIND_MMT, title, command, mmt_dir, [temp_config], pending_compare, report_archive
         )
 
-    def submit_compare(self, python_exe: str, compare_dir: Path, spec: CompareJobSpec) -> str:
+    def submit_compare(
+        self, python_exe: str, compare_dir: Path, spec: CompareJobSpec,
+        *, sync_source_job_id: Optional[str] = None,
+    ) -> str:
         powertrain_type = normalize_powertrain_type(spec.powertrain_type)
         title = spec.task_name.strip() or f"对比报告 {time.strftime('%H:%M:%S')}"
         command = [
@@ -198,7 +206,10 @@ class JobManager(QObject):
                 command.extend([flag, value.strip()])
         if spec.details_sheet:
             command.append("--details-sheet")
-        return self._submit(JOB_KIND_COMPARE, title, command, compare_dir, [])
+        return self._submit(
+            JOB_KIND_COMPARE, title, command, compare_dir, [],
+            sync_source_job_id=sync_source_job_id,
+        )
 
     def cancel(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
@@ -209,9 +220,15 @@ class JobManager(QObject):
                 self._queue.remove(job_id)
             job.status = STATUS_CANCELED
             job.finished_at = time.time()
+            if job.pending_sync:
+                job.pending_sync = False
+                job.sync_status = "未完成"
+                job.sync_detail = "挖掘任务已取消，未执行延迟检查。"
             self._cleanup_temp_files(job)
             self.job_updated.emit(job_id)
             self.job_finished.emit(job_id)
+            if job.kind in (JOB_KIND_COMPARE, JOB_KIND_LCC_SYNC):
+                self._finish_sync_dependency(job)
         elif job.status == STATUS_RUNNING and job.process is not None:
             job.status = STATUS_CANCELED
             self.job_updated.emit(job_id)
@@ -280,6 +297,10 @@ class JobManager(QObject):
         temp_files: List[Path],
         pending_compare: Optional[Dict[str, Any]] = None,
         report_archive: Optional[Dict[str, str]] = None,
+        *,
+        pending_sync: bool = False,
+        sync_status: str = "",
+        sync_source_job_id: Optional[str] = None,
     ) -> str:
         job_id = uuid.uuid4().hex
         job = Job(
@@ -291,6 +312,9 @@ class JobManager(QObject):
             temp_files=temp_files,
             pending_compare=pending_compare,
             report_archive=report_archive,
+            pending_sync=pending_sync,
+            sync_status=sync_status,
+            sync_source_job_id=sync_source_job_id,
         )
         self._jobs[job_id] = job
         self._queue.append(job_id)
@@ -320,6 +344,11 @@ class JobManager(QObject):
         job.process = process
         job.status = STATUS_RUNNING
         job.started_at = time.time()
+        if job.kind == JOB_KIND_LCC_SYNC:
+            source = self._jobs.get(job.sync_source_job_id)
+            if source is not None:
+                source.sync_status = "检查中"
+                self.job_updated.emit(source.id)
         self._running[job.id] = job
 
         process.readyReadStandardOutput.connect(lambda job_id=job.id: self._on_output(job_id))
@@ -363,6 +392,13 @@ class JobManager(QObject):
                     captured_plot if captured_plot.is_absolute()
                     else (job.cwd / captured_plot).resolve()
                 )
+            if job.kind == JOB_KIND_LCC_SYNC:
+                source = self._jobs.get(job.sync_source_job_id)
+                if source is not None:
+                    source.sync_status = job.sync_status or "检查中"
+                    source.sync_detail = job.sync_detail
+                    source.sync_plot_path = job.sync_plot_path
+                    self.job_updated.emit(source.id)
             if update.percent is not None:
                 job.percent = max(job.percent, update.percent)
             if update.current is not None and update.total is not None:
@@ -384,10 +420,12 @@ class JobManager(QObject):
         message = f"[进程错误] {error}"
         job.log_lines.append(message)
         self.job_log.emit(job_id, message)
+        if error == QProcess.ProcessError.FailedToStart:
+            self._on_finished(job_id, -1, QProcess.ExitStatus.CrashExit)
 
     def _on_finished(self, job_id: str, exit_code: int, exit_status) -> None:
         job = self._jobs.get(job_id)
-        if job is None:
+        if job is None or job.finished_at is not None:
             return
         self._on_output(job_id, final=True)
         self._running.pop(job_id, None)
@@ -408,9 +446,60 @@ class JobManager(QObject):
             self._archive_report(job)
         self.job_updated.emit(job_id)
         self.job_finished.emit(job_id)
-        if job.status == STATUS_SUCCESS and job.pending_compare is not None:
-            self._trigger_auto_compare(job)
+        if job.status == STATUS_SUCCESS:
+            compare_id = self._trigger_auto_compare(job) if job.pending_compare is not None else None
+            if job.pending_sync and compare_id is None:
+                self._submit_sync(job)
+        elif job.pending_sync:
+            job.pending_sync = False
+            job.sync_status = "未完成"
+            job.sync_detail = "挖掘失败或取消，未执行延迟检查。"
+            self.job_updated.emit(job.id)
+        self._finish_sync_dependency(job)
         self._try_start_next()
+
+    def _submit_sync(self, source: Job) -> None:
+        if not source.pending_sync:
+            return
+        source.pending_sync = False
+        if source.report_path is None:
+            source.sync_status = "检查失败"
+            source.sync_detail = "未捕获本次报告路径，无法定位挖掘清单。"
+            source.log_lines.append(source.sync_detail)
+            self.job_log.emit(source.id, source.sync_detail)
+            self.job_updated.emit(source.id)
+            return
+        source.sync_status = "排队中"
+        self.job_updated.emit(source.id)
+        self._submit(
+            JOB_KIND_LCC_SYNC, source.title + " · LCC延迟检查",
+            [source.command[0], str(source.cwd / "activation_sync_check.py"),
+             "--mining-manifest", str(source.report_path.parent / "run_manifest.json")],
+            source.cwd, [], sync_source_job_id=source.id,
+        )
+
+    def _finish_sync_dependency(self, job: Job) -> None:
+        source = self._jobs.get(job.sync_source_job_id)
+        if source is None:
+            return
+        if job.kind == JOB_KIND_COMPARE:
+            if job.status == STATUS_CANCELED:
+                source.pending_sync = False
+                source.sync_status = "未完成"
+                source.sync_detail = "自动对比任务已取消，未执行后续延迟检查。"
+                self.job_updated.emit(source.id)
+            else:
+                self._submit_sync(source)
+        elif job.kind == JOB_KIND_LCC_SYNC:
+            if job.status != STATUS_SUCCESS or not job.sync_status:
+                source.sync_status = "未完成" if job.status == STATUS_CANCELED else "检查失败"
+                source.sync_detail = "延迟检查未成功完成，请查看对应延迟检查任务的日志。"
+                source.sync_plot_path = None
+                job.sync_status = source.sync_status
+                job.sync_detail = source.sync_detail
+                job.sync_plot_path = None
+                self.job_updated.emit(job.id)
+            self.job_updated.emit(source.id)
 
     def _archive_report(self, job: Job) -> None:
         options = job.report_archive
@@ -439,7 +528,7 @@ class JobManager(QObject):
         job.log_lines.append(message)
         self.job_log.emit(job.id, message)
 
-    def _trigger_auto_compare(self, job: Job) -> None:
+    def _trigger_auto_compare(self, job: Job) -> Optional[str]:
         pending = job.pending_compare
         if pending is None:
             return
@@ -459,7 +548,10 @@ class JobManager(QObject):
         self.job_log.emit(job.id, message)
         self.job_updated.emit(job.id)
         try:
-            self.submit_compare(pending["python_exe"], pending["compare_dir"], spec)
+            return self.submit_compare(
+                pending["python_exe"], pending["compare_dir"], spec,
+                sync_source_job_id=job.id if job.pending_sync else None,
+            )
         except Exception as exc:  # noqa: BLE001 - surface failure into the source job's log
             error_message = f"[自动对比] 提交对比报告任务失败：{exc}"
             job.log_lines.append(error_message)

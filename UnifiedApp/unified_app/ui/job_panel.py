@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..job_manager import STATUS_FAILED, STATUS_RUNNING, STATUS_SUCCESS, STATUS_CANCELED, TERMINAL_STATUSES, JobManager
-from ..job_spec import JOB_KIND_J6B
+from ..job_spec import JOB_KIND_J6B, JOB_KIND_LCC_SYNC
 from .log_dialog import LogDialog
 
 
@@ -99,7 +99,9 @@ class JobPanel(QWidget):
         self.table.setCellWidget(row, COL_PROGRESS, progress)
 
         self.table.setItem(row, COL_ELAPSED, QTableWidgetItem("-"))
-        self.table.setItem(row, COL_SYNC, QTableWidgetItem("待检查" if job.kind == JOB_KIND_J6B else "-"))
+        self.table.setItem(row, COL_SYNC, QTableWidgetItem(
+            job.sync_status or ("待检查" if job.kind in (JOB_KIND_J6B, JOB_KIND_LCC_SYNC) else "-")
+        ))
         plot_link = QLabel("-")
         plot_link.linkActivated.connect(lambda _url, jid=job_id: self._open_sync_plot(jid))
         self.table.setCellWidget(row, COL_SYNC_PLOT, plot_link)
@@ -140,7 +142,7 @@ class JobPanel(QWidget):
             elapsed = int(end_time - job.started_at)
             self.table.setItem(row, COL_ELAPSED, QTableWidgetItem(_format_elapsed(elapsed)))
 
-        if job.kind == JOB_KIND_J6B:
+        if job.kind in (JOB_KIND_J6B, JOB_KIND_LCC_SYNC):
             sync_item = QTableWidgetItem(
                 job.sync_status or ("未完成" if job.status in TERMINAL_STATUSES else "待检查")
             )
