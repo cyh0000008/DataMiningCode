@@ -30,17 +30,9 @@
 
 ## 4. 重制动判定
 
-加速度先做滑动平均：
-
-- `acceleration_smoothing_window = 5`
-
-然后基于平滑后的加速度计算 jerk：
-
-- `jerk = delta_acc / delta_t`
-
-如果相邻采样点 `dt <= 0`，该点 jerk 按 `0` 处理。jerk 序列再做一次滑动平均：
-
-- `jerk_smoothing_window = 5`
+加速度先做 0.3 秒居中时间窗平均，再在 0.3 秒居中时间窗内多点线性拟合，
+取斜率作为 jerk；不再相邻点差分或二次平滑。至少需要 3 个有限值且跨度至少 0.15 秒，
+不足时为 NaN，不作为 jerk 候选点。旧样本数窗口参数仅兼容默认值 5，非默认覆盖会报错。
 
 主规则必须同时满足：
 
@@ -97,8 +89,8 @@ severity = accel_excess * 30 + jerk_excess * 20 + drop_excess * 30 + slope_exces
 
 ## 8. 默认参数
 
-- `acceleration_smoothing_window = 5`
-- `jerk_smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒
+- 旧 `acceleration_smoothing_window=5`、`jerk_smoothing_window=5` 仅兼容默认调用
 - `heavy_brake_accel_threshold = -2.0`
 - `heavy_brake_jerk_threshold = -2.0`
 - `decel_jump_window_seconds = 1.60`
@@ -123,6 +115,6 @@ severity = accel_excess * 30 + jerk_excess * 20 + drop_excess * 30 + slope_exces
 
 ## 10. 边界说明
 
-- jerk 由平滑后的纵向加速度计算，并再次平滑，用来抑制单点尖峰。
+- jerk 由 0.3 秒平滑加速度的 0.3 秒多点拟合斜率计算，不再额外平滑 jerk。
 - “重制动次数”按事件段统计，不按采样点统计。
 - 很近的重制动事件会合并，避免一个完整制动过程被重复计数。

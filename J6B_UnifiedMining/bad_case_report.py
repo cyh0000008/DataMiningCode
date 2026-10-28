@@ -45,7 +45,10 @@ def write_bad_case_report(
         return None
 
     output_dir = Path(output_dir)
-    metric_list = list(metrics)
+    metric_list = [
+        metric for metric in metrics
+        if not metric.name.startswith("driving_uninterfered_accel_")
+    ]
     metric_categories = {metric.name: metric.category for metric in metric_list}
     metric_order = sorted(
         [metric.name for metric in metric_list],

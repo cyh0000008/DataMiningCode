@@ -69,7 +69,7 @@ ACC 开启点定义为 `IACCAct376` 的上升沿：
 ## 6. 主要参数
 
 - `start_window_seconds` 分别配置：ICE 为 `3.0`，PHEV 为 `1.0`，BEV 为 `1.0`
-- `smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒（旧 `smoothing_window=5` 仅兼容默认调用）
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`

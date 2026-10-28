@@ -13,6 +13,7 @@ from metric_utils import (
     derivative,
     event_from_segment,
     jerkiness_events,
+    jerk_from_acceleration,
     post_override_release_mask,
     result_from_events,
     time_window_moving_average,
@@ -90,7 +91,7 @@ class AccTorqueJerkinessCountMetric(BaseMetric):
             self.trend_acceleration_window_s,
         )
         acceleration_highpass = acceleration_smooth - acceleration_trend
-        jerk = derivative(frame.time_s, acceleration_smooth)
+        jerk = jerk_from_acceleration(frame.time_s, acceleration)
         drive_torque = time_window_moving_average(
             frame.time_s,
             frame.col("actual_drive_torque").astype(float),

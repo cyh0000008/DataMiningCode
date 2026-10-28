@@ -734,6 +734,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                     "f_potential_cipv_by_pos": False,
                     "f_potential_cipv_in_trafficlight": False,
                     "closest_obj_x": None,
+                    "closest_obj_id": None,
                     "closest_obj_y": None,
                     "closest_obj_vel": None,
                     "closest_obj_acc": None,
@@ -779,7 +780,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                     if pos_x_value >= 1 and pos_x_value <= 50 and pos_y_value >= -1.5 and pos_y_value <= 1.5:
                         f_potential_cipv_by_pos = True
                         # 新增：将满足条件的坐标加入列表
-                        valid_objs.append((pos_x_value, pos_y_value, pos_vel_value, pos_acc_value, pos_len_value))
+                        valid_objs.append((pos_x_value, pos_y_value, pos_vel_value, pos_acc_value, pos_len_value, int(track_id_match.group(1))))
                     if pos_x_value >= 0 and pos_x_value <= 20 and pos_y_value >= -1.5 and pos_y_value <= 1.5:
                         f_potential_cipv_in_trafficlight = True
                 else:
@@ -790,6 +791,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
 
             # 新增：找到pos_x最小的目标坐标（最接近的obj）
             closest_obj_x = None
+            closest_obj_id = None
             closest_obj_y = None
             closest_obj_vel = None
             closest_obj_acc = None
@@ -797,7 +799,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             if valid_objs:
                 # 按pos_x升序排序，取第一个（x最小）
                 valid_objs_sorted = sorted(valid_objs, key=lambda x: x[0])
-                closest_obj_x, closest_obj_y, closest_obj_vel, closest_obj_acc, closest_obj_len = valid_objs_sorted[0]
+                closest_obj_x, closest_obj_y, closest_obj_vel, closest_obj_acc, closest_obj_len, closest_obj_id = valid_objs_sorted[0]
             
             # 修正：返回字典格式，而非元组
             parsed.append({
@@ -807,6 +809,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                 "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
                 "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
                 "closest_obj_x": closest_obj_x,
+                "closest_obj_id": closest_obj_id,
                 "closest_obj_y": closest_obj_y,
                 "closest_obj_vel": closest_obj_vel,
                 "closest_obj_acc": closest_obj_acc,

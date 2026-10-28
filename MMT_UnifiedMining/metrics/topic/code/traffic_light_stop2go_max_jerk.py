@@ -1,3 +1,4 @@
+from jerk_utils import jerk_extreme_with_time
 import os
 import re
 import traceback
@@ -247,61 +248,5 @@ def _calc_segment_max_jerk(segment: List[Dict], chassis_paragraphs: List[Dict]) 
     return (max_jerk_item[0], max_jerk_item[1], start_vel) if max_jerk_item else (None, None, start_vel)
 
 def calculate_max_smoothed_jerk_with_time(acc_with_time: List[Tuple[Optional[float], Optional[float]]]) -> Optional[Tuple[float, float]]:
-    """计算平滑后的最小jerk值及对应时刻，适配Python3.8"""
-    # 过滤有效数据
-    valid_points = [
-        (float(acc), float(t_ms)) for acc, t_ms in acc_with_time
-        if acc is not None and t_ms is not None and t_ms > 0
-    ]
-    if len(valid_points) < 3:
-        print("警告：有效加速度点不足3个，无法计算jerk")
-        return None
-    # 排序去重
-    valid_points.sort(key=lambda x: x[1])
-    unique_points = []
-    seen_times = set()
-    for acc, t_ms in reversed(valid_points):
-        if t_ms not in seen_times:
-            seen_times.add(t_ms)
-            unique_points.append((acc, t_ms))
-    unique_points.reverse()
-    if len(unique_points) < 3:
-        return None
-
-    # 计算原始jerk
-    raw_jerk_with_time = []
-    time_list = [p[1] for p in unique_points]
-    acc_list = [p[0] for p in unique_points]
-    for i in range(1, len(unique_points)-1):
-        t_prev, t_curr, t_next = time_list[i-1]/1000, time_list[i]/1000, time_list[i+1]/1000
-        delta_t = t_next - t_prev
-        if abs(delta_t) < 1e-6:
-            raw_jerk_with_time.append((0.0, time_list[i]))
-            continue
-        # 中心差分法
-        jerk = (acc_list[i+1] - acc_list[i-1]) / delta_t
-        raw_jerk_with_time.append((jerk, time_list[i]))
-
-    if not raw_jerk_with_time:
-        return None
-    # 滑动平均平滑
-    smoothed_jerk = sliding_average_with_time(raw_jerk_with_time, window_size=5)
-    # 找到最小jerk
-    max_jerk_item = max(smoothed_jerk, key=lambda x: x[0])
-    return (max_jerk_item[0], max_jerk_item[1])
-
-def sliding_average_with_time(jerk_time_list: List[Tuple[float, float]], window_size: int = 5) -> List[Tuple[float, float]]:
-    """滑动平均，保留时刻关联，纯Python3.8内置实现"""
-    if window_size < 2 or len(jerk_time_list) <= window_size:
-        return jerk_time_list.copy()
-    # 拆分数据
-    jerks, times = [j for j, t in jerk_time_list], [t for j, t in jerk_time_list]
-    # 镜像填充
-    pad = window_size // 2
-    padded_jerks = [jerks[0]] * pad + jerks + [jerks[-1]] * pad
-    # 计算滑动平均
-    smoothed = []
-    for i in range(len(jerks)):
-        window = padded_jerks[i:i+window_size]
-        smoothed.append((sum(window)/len(window), times[i]))
-    return smoothed
+    """Return window-fitted jerk and its original millisecond timestamp."""
+    return jerk_extreme_with_time(acc_with_time, "max")

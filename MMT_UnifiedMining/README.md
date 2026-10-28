@@ -5,6 +5,71 @@ in the metric-name column. The existing metric-key column, extraction-rule keys,
 and summary-report identifiers remain unchanged.
 Mining summary reports also include a Chinese metric-name column immediately after the
 original metric-name column; code identifiers and statistics remain unchanged.
+All 12 driving-uninterfered-acceleration metrics are excluded from Bad Case
+extraction reports, regardless of extraction rules. Their calculations, CSV
+outputs, summary statistics and comparison reports remain unchanged.
+
+## Curve and stop-and-go TTC gate
+
+The three curve-control CPI metrics and four stop-and-go CPI metrics use a
+4.5 s TTC scene-selection threshold on every frame (previously 3.5 s).
+An available positive TTC below 4.5 s breaks the candidate segment; equality
+is allowed. Existing missing/zero-TTC handling and all other scene conditions
+remain unchanged. This does not change jerk or acceleration build-up thresholds.
+
+## Stable follow-stop distance
+
+Follow-stop distance retains the existing scene entry and inclusive [3, 4] m
+criteria, but no longer uses the first stationary sample. After that sample at
+`t0`, observe the full [t0, t0+2 s] interval and take the median distance over
+[t0+1 s, t0+2 s]. Each sample is converted to bumper clearance first:
+`closest_obj_x - closest_obj_len / 2 - 3.8` (meters).
+
+Throughout observation, the ego vehicle must remain stationary with NP on,
+the same available closest target must remain present, and its absolute ground
+velocity must be <=0.2 m/s. Fusion preprocessing now retains `closest_obj_id`
+from `track_id` to verify identity; missing IDs are not guessed from position.
+Missing/invalid/stale matched data, a target switch/loss, vehicle movement,
+an incomplete 2 s interval or a sampling gap >0.2 s excludes the scene from
+the valid total Case count. The final second needs at least 3 distinct fusion
+timestamps; repeated references to the same fusion timestamp count once.
+The first sample at/after the right endpoint confirms coverage and state, but
+samples strictly beyond the endpoint are not included in the median.
+
+Exclusions and reasons are preserved in metric details. Successful measurements
+record the median, stable-window endpoints and sample count. Existing continuous
+cross-done context can complete the observation; no fallback to the first stop
+sample or a shortened window is used. "Stable" means the final-second median;
+no additional variance/range limit is imposed.
+
+## Sustained jerk calculation
+
+All acceleration-derived jerk uses the same algorithm as J6B: a centered **0.3 s**
+arithmetic mean of acceleration, followed by a centered **0.3 s** least-squares
+linear fit against actual timestamps. The fitted slope is jerk in m/s3. There is
+no adjacent/three-point difference and no additional jerk smoothing.
+
+`jerk_utils.py` is local to MMT so this project can still be deployed independently.
+It is used by all seven Topic jerk CPI implementations, Topic/CAN ACC jerkiness
+and heavy braking, dedicated ACC jerkiness scenes, APA jerkiness and gear-switch
+jerkiness. Existing signal selection, slope compensation, thresholds and event
+duration criteria are unchanged. High-pass acceleration analysis, torque rates
+and unrelated acceleration/speed statistics retain their existing filters.
+
+Each fit needs at least three finite samples spanning at least 0.15 s; unsupported
+points are NaN, not zero, and do not qualify as MPI jerk candidates. CPI helpers
+warn and return no measurement when there is no supported fit. Timestamp arrays
+must be finite and strictly increasing. Topic CPI adapters retain sorting,
+last-value timestamp deduplication and millisecond output, with seconds used
+internally. File/scene edges use truncated windows.
+
+Legacy sample-count smoothing arguments remain in callable signatures for
+compatibility with default calls (`5`); non-default overrides now raise an
+explicit error instead of silently changing or ignoring the fixed time windows.
+Result parameter dictionaries report the effective windows in seconds and the
+regression method. This is a windowed trend, not a new requirement for 0.3 s
+of continuous threshold exceedance. Re-mine both Base and Target with the new
+algorithm for version comparisons; historical values are not automatically updated.
 
 ## Vehicle powertrain
 

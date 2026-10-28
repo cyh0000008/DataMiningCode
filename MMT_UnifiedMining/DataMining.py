@@ -2410,6 +2410,8 @@ def generate_bad_case_extract_report(
             continue
 
         pipeline_name, metric_name = split_output_prefix(output_prefix, csv_data)
+        if metric_name.startswith("driving_uninterfered_accel_"):
+            continue
         rule = resolve_bad_case_extract_rule(extract_config, pipeline_name, metric_name, output_prefix)
         if not rule.enabled:
             continue

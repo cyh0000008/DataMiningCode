@@ -17,7 +17,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from PIL import Image, ImageDraw, ImageFont
 
 from DataMining import load_config, resolve_path
-from metric_utils import derivative, time_window_moving_average
+from metric_utils import derivative, jerk_from_acceleration, time_window_moving_average
 from signal_preprocessor import build_signal_frame
 
 
@@ -253,7 +253,7 @@ def draw_event_plot(frame: Any, row: Mapping[str, Any], output_path: Path) -> No
     acceleration_smooth = time_window_moving_average(t, acceleration, ACCELERATION_SMOOTHING_WINDOW_S)
     acceleration_trend = time_window_moving_average(t, acceleration, ACCELERATION_TREND_WINDOW_S)
     acceleration_highpass = acceleration_smooth - acceleration_trend
-    jerk = derivative(t, acceleration_smooth)
+    jerk = jerk_from_acceleration(t, acceleration)
     drive_torque = time_window_moving_average(
         t,
         frame.col("actual_drive_torque").astype(float),

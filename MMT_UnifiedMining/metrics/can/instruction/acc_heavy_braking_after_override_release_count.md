@@ -37,6 +37,9 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 
 ## 4. 重制动判定
 
+jerk 使用 0.3 秒加速度居中平均后、0.3 秒居中多点拟合的斜率，不做相邻点差分或二次平滑。
+至少需要 3 个有限值且跨度至少 0.15 秒，不足时为 NaN 并排除；筛选阈值及持续时间不变。
+
 在有效 5 秒窗口内，重制动事件需要同时满足：
 
 - 纵向加速度 `< -2.0`
@@ -75,8 +78,8 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 ## 7. 默认参数
 
 - `post_override_window_seconds = 5.0`
-- `acceleration_smoothing_window = 5`
-- `jerk_smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒
+- 旧 `acceleration_smoothing_window=5`、`jerk_smoothing_window=5` 仅兼容默认调用
 - `heavy_brake_accel_threshold = -2.0`
 - `heavy_brake_jerk_threshold = -3.0`
 - `min_brake_duration_seconds = 0.20`

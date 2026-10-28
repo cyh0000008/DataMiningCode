@@ -31,15 +31,10 @@
 - `IAPABT_APAType == 1`
 - `IAPASP_APAStsAuth == 5 或 6`
 
-加速度先做滑动平均：
-
-- `smoothing_window = 5`
-
-再基于平滑后的加速度计算相邻点斜率：
-
-- `slope = delta_acc / delta_t`
-
-斜率依赖相邻采样点，所以候选点要求当前点和前一个点都处于 APA 场景。
+加速度先做 0.3 秒居中时间窗平均，再在 0.3 秒居中时间窗内进行多点线性拟合，
+斜率即 jerk；不做相邻点差分或 jerk 二次平滑。拟合至少需要 3 个有限值且跨度至少
+0.15 秒，不足时为 NaN。保留当前点和前一个点均处于 APA 场景的门控，排除无有效拟合的点。
+`smoothing_window=5` 仅保留默认调用兼容，不再表示实际窗口。
 
 ## 4. 顿挫识别
 
@@ -76,7 +71,7 @@
 
 ## 7. 默认参数
 
-- `smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒（旧 `smoothing_window=5` 仅兼容默认调用）
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`

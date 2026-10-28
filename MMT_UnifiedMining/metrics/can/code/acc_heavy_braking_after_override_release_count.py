@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from jerk_utils import JERK_PARAMETERS, sustained_jerk
+import math
+
 import time
 from bisect import bisect_right
 from pathlib import Path
 from typing import Any
 
-from signal_lib import FolderSession
+from signal_lib import FolderSession, mask_to_segments
 
 
 METRIC_CATEGORY = "MPI"
@@ -117,15 +120,13 @@ def count_acc_heavy_braking_after_override_release_events(
         for index in range(int(scene["start_index"]), int(scene["end_index"]) + 1):
             qualified_mask[index] = _as_bool(acc_active_values[index]) and (not _as_bool(pedal_override_values[index]))
 
-    smoothed_acc = _moving_average(accel_values, acceleration_smoothing_window)
-    jerk_raw: list[float] = []
-    for index in range(1, len(smoothed_acc)):
-        dt = axis[index] - axis[index - 1]
-        jerk_raw.append(0.0 if dt <= 0 else (smoothed_acc[index] - smoothed_acc[index - 1]) / dt)
-    filtered_jerk = _moving_average(jerk_raw, jerk_smoothing_window)
+    smoothed_acc, jerk_values = sustained_jerk(
+        axis, accel_values, acceleration_smoothing_window, jerk_smoothing_window,
+    )
+    filtered_jerk = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_valid_mask = [qualified_mask[index] and qualified_mask[index - 1] for index in range(1, len(axis))]
+    candidate_valid_mask = [qualified_mask[index] and qualified_mask[index - 1] and math.isfinite(filtered_jerk[index - 1]) for index in range(1, len(axis))]
     accel_candidates = accel_values[1:]
     qualified_sample_count = sum(candidate_valid_mask)
 
@@ -184,8 +185,7 @@ def count_acc_heavy_braking_after_override_release_events(
         "max_event_severity": max((float(event["severity"]) for event in events), default=0.0),
         "parameters": {
             "post_override_window_seconds": post_override_window_seconds,
-            "acceleration_smoothing_window": acceleration_smoothing_window,
-            "jerk_smoothing_window": jerk_smoothing_window,
+            **JERK_PARAMETERS,
             "heavy_brake_accel_threshold": heavy_brake_accel_threshold,
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "min_brake_duration_seconds": min_brake_duration_seconds,
@@ -363,8 +363,7 @@ def _empty_result(
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
         "parameters": {
-            "acceleration_smoothing_window": acceleration_smoothing_window,
-            "jerk_smoothing_window": jerk_smoothing_window,
+            **JERK_PARAMETERS,
             "heavy_brake_accel_threshold": heavy_brake_accel_threshold,
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "min_brake_duration_seconds": min_brake_duration_seconds,
@@ -405,8 +404,7 @@ def _empty_result(
         "max_event_severity": 0.0,
         "parameters": {
             "post_override_window_seconds": post_override_window_seconds,
-            "acceleration_smoothing_window": acceleration_smoothing_window,
-            "jerk_smoothing_window": jerk_smoothing_window,
+            **JERK_PARAMETERS,
             "heavy_brake_accel_threshold": heavy_brake_accel_threshold,
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "min_brake_duration_seconds": min_brake_duration_seconds,

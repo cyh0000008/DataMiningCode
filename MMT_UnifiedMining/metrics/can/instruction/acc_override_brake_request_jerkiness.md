@@ -51,7 +51,7 @@
 
 ## 5. 主要参数
 
-- `smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒（旧 `smoothing_window=5` 仅兼容默认调用）
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`

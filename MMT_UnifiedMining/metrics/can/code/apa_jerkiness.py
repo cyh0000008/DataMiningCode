@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from jerk_utils import JERK_PARAMETERS, sustained_jerk
+import math
+
 import time
 from pathlib import Path
 from typing import Any
@@ -148,14 +151,11 @@ def count_apa_jerkiness_events(
         for apa_type, apa_status in zip(apa_type_values, apa_status_values)
     ]
 
-    smoothed_acceleration = _moving_average(accel_values, smoothing_window)
-    slope = []
-    for index in range(1, len(smoothed_acceleration)):
-        dt = axis[index] - axis[index - 1]
-        slope.append(0.0 if dt <= 0 else (smoothed_acceleration[index] - smoothed_acceleration[index - 1]) / dt)
+    smoothed_acceleration, jerk_values = sustained_jerk(axis, accel_values, smoothing_window)
+    slope = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_mask = [valid_mask[index] and valid_mask[index - 1] for index in range(1, len(axis))]
+    candidate_mask = [valid_mask[index] and valid_mask[index - 1] and math.isfinite(slope[index - 1]) for index in range(1, len(axis))]
     valid_sample_count = sum(candidate_mask)
 
     original_candidate_mask = _detect_oscillation_candidates(
@@ -250,7 +250,7 @@ def count_apa_jerkiness_events(
         "end_timestamp": end_timestamp,
         "max_event_severity": max_event_severity,
         "parameters": {
-            "smoothing_window": smoothing_window,
+            **JERK_PARAMETERS,
             "deadband": deadband,
             "min_oscillation_amplitude": min_oscillation_amplitude,
             "min_sign_flips": min_sign_flips,
@@ -1093,7 +1093,7 @@ def _empty_result(
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
         "parameters": {
-            "smoothing_window": smoothing_window,
+            **JERK_PARAMETERS,
             "deadband": deadband,
             "min_oscillation_amplitude": min_oscillation_amplitude,
             "min_sign_flips": min_sign_flips,

@@ -11,7 +11,8 @@ import numpy as np
 from signal_preprocessor import SignalFrame
 
 
-JERK_SMOOTHING_WINDOW_S = 0.5
+JERK_SMOOTHING_WINDOW_S = 0.3
+JERK_REGRESSION_WINDOW_S = 0.3
 KPH_PER_MPS = 3.6
 FOLLOW_STOP_FRONT_STOP_SPEED_MPS = 0.2
 STOP2GO_START_TARGET_SPEED_MPS = 3.33
@@ -137,7 +138,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
     "stop2go": (
         "time_s", "stationary_flag", "moving_flag", "acc_active_flag", "front_ttc",
-        "curv_enable_flag", "curv_speed_limit", "ego_speed_mps",
+        "curv_enable_flag", "curv_speed_limit", "ego_speed_mps", "acceleration_total", "set_speed",
     ),
     "slope_no_front": (
         "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "moving_flag",
@@ -164,7 +165,10 @@ MEASURE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "min_ttc": ("time_s", "front_ttc"),
     "min_ttc_front_decel": ("time_s", "front_ttc", "front_accel"),
     "min_front_distance": ("time_s", "front_range"),
-    "stop_front_distance": ("time_s", "front_range", "stationary_flag"),
+    "stop_front_distance": (
+        "time_s", "front_range", "stationary_flag", "front_valid",
+        "front_target_id", "front_velocity_abs", "acc_active_flag",
+    ),
     "speed_inflections": ("time_s", "ego_speed_mps"),
     "velocity_fluct": ("time_s", "ego_speed_mps"),
     "start_latency": ("time_s", "ego_speed_mps"),
@@ -302,13 +306,21 @@ def moving_average(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(padded, kernel, mode="valid")[: values.size]
 
 
+def _time_window_bounds(t: np.ndarray, window_s: float) -> Tuple[np.ndarray, np.ndarray]:
+    half_window = float(window_s) / 2.0
+    # Include mathematical endpoints despite floating-point timestamp rounding.
+    tolerance = np.maximum(1e-9, 4 * np.finfo(float).eps * np.abs(t))
+    return (
+        np.searchsorted(t, t - half_window - tolerance, side="left"),
+        np.searchsorted(t, t + half_window + tolerance, side="right"),
+    )
+
+
 def time_window_moving_average(t: np.ndarray, values: np.ndarray, window_s: float) -> np.ndarray:
     values = values.astype(float)
     if window_s <= 0.0 or values.size <= 2:
         return values.copy()
-    half_window = float(window_s) / 2.0
-    left = np.searchsorted(t, t - half_window, side="left")
-    right = np.searchsorted(t, t + half_window, side="right")
+    left, right = _time_window_bounds(t, window_s)
     finite = np.isfinite(values)
     safe_values = np.where(finite, values, 0.0)
     sums = np.concatenate(([0.0], np.cumsum(safe_values)))
@@ -332,15 +344,66 @@ def derivative(t: np.ndarray, values: np.ndarray) -> np.ndarray:
     return out
 
 
+def time_window_linear_slope(t: np.ndarray, values: np.ndarray, window_s: float) -> np.ndarray:
+    """Fit a centered local slope; insufficient temporal support is NaN, not zero."""
+    t = np.asarray(t, dtype=float)
+    values = np.asarray(values, dtype=float)
+    if t.ndim != 1 or values.shape != t.shape:
+        raise ValueError("Slope requires matching one-dimensional time and value arrays")
+    if not np.isfinite(window_s) or window_s <= 0.0:
+        raise ValueError("Slope window must be finite and positive")
+    if not np.all(np.isfinite(t)) or np.any(np.diff(t) <= 0.0):
+        raise ValueError("Slope timestamps must be finite and strictly increasing")
+    out = np.full(values.shape, np.nan, dtype=float)
+    half_window = float(window_s) / 2.0
+    left, right = _time_window_bounds(t, window_s)
+    # Bound blocks in both samples and time, including recordings with long gaps.
+    start = 0
+    while start < t.size:
+        end = min(start + 2048, int(np.searchsorted(t, t[start] + 30.0, side="right")))
+        lo, hi = int(left[start]), int(right[end - 1])
+        x = t[lo:hi] - t[start]
+        y = values[lo:hi]
+        finite = np.isfinite(y)
+        safe_y = np.where(finite, y, 0.0)
+        safe_x = np.where(finite, x, 0.0)
+        a, b = left[start:end] - lo, right[start:end] - lo
+
+        def window_sum(data: np.ndarray) -> np.ndarray:
+            prefix = np.concatenate(([0.0], np.cumsum(data)))
+            return prefix[b] - prefix[a]
+
+        count = window_sum(finite.astype(float))
+        sx = window_sum(safe_x)
+        sy = window_sum(safe_y)
+        sxx = window_sum(safe_x * safe_x)
+        sxy = window_sum(safe_x * safe_y)
+        denominator = count * sxx - sx * sx
+        indices = np.arange(hi - lo)
+        first = np.minimum.accumulate(np.where(finite, indices, hi - lo)[::-1])[::-1]
+        last = np.maximum.accumulate(np.where(finite, indices, -1))
+        first_in_window, last_in_window = first[a], last[b - 1]
+        supported = (count >= 3) & (last_in_window >= first_in_window)
+        span = np.zeros(end - start)
+        span[supported] = x[last_in_window[supported]] - x[first_in_window[supported]]
+        supported &= (span >= half_window - 1e-9) & (denominator > 0.0)
+        np.divide(
+            count * sxy - sx * sy, denominator,
+            out=out[start:end], where=supported,
+        )
+        start = end
+    return out
+
+
 def jerk_from_acceleration(t: np.ndarray, acceleration: np.ndarray) -> np.ndarray:
     smoothed_acceleration = time_window_moving_average(t, acceleration, JERK_SMOOTHING_WINDOW_S)
-    return derivative(t, smoothed_acceleration)
+    return time_window_linear_slope(t, smoothed_acceleration, JERK_REGRESSION_WINDOW_S)
 
 
 def jerkiness_events(frame: SignalFrame, valid: np.ndarray, accel: np.ndarray) -> List[MetricEvent]:
     t = frame.time_s
-    smoothed = moving_average(accel.astype(float), 5)
-    jerk = derivative(t, smoothed)
+    smoothed = time_window_moving_average(t, accel, JERK_SMOOTHING_WINDOW_S)
+    jerk = jerk_from_acceleration(t, accel)
     signed = np.where(jerk > 0.8, 1, np.where(jerk < -0.8, -1, 0))
     candidate = np.logical_and(valid, signed != 0)
     # Preserve interruptions; do not bridge inactive or non-candidate samples.
@@ -498,16 +561,31 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
     acc_active = frame.col("acc_active_flag", 0).astype(bool)
     ttc = frame.col("front_ttc", np.inf)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
+    acceleration = frame.col("acceleration_total").astype(float)
+    set_speed_kph = frame.col("set_speed").astype(float)
+    set_speed_stable = np.zeros(frame.length, dtype=bool)
+    set_speed_stable[1:] = np.abs(np.diff(set_speed_kph)) <= 1e-6
+    valid = np.logical_and.reduce([
+        np.isfinite(acceleration),
+        acceleration >= 0.0,
+        np.isfinite(set_speed_kph),
+        set_speed_stable,
+        np.isfinite(speed),
+        speed <= set_speed_kph / KPH_PER_MPS,
+        np.logical_not(np.isfinite(ttc) & (ttc < 4.5)),
+    ])
     curv_limited = curvature_speed_limited_mask(frame, 20.0)
 
     segments: List[Segment] = []
     for idx in range(1, frame.length):
         if not (stationary[idx - 1] and moving[idx] and acc_active[idx]):
             continue
-        if curv_limited[idx] or (np.isfinite(ttc[idx]) and ttc[idx] < 3.5):
+        if curv_limited[idx] or not valid[idx]:
             continue
         end = idx
         while end + 1 < frame.length:
+            if not valid[end + 1]:
+                break
             end += 1
             if speed[end] >= 8.0:
                 break
@@ -537,7 +615,7 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
     )
     return [
         seg
-        for seg in mask_to_segments(frame.time_s, merge_short_gaps(frame.time_s, mask, 0.5))
+        for seg in mask_to_segments(frame.time_s, mask)
         if seg.duration(frame.time_s) >= min_duration_s
     ]
 
@@ -553,11 +631,11 @@ def curvature_segments(frame: SignalFrame) -> List[Segment]:
             frame.col("curv_enable_flag", 0).astype(bool),
             frame.col("moving_flag", 0).astype(bool),
             speed >= min_speed_mps,
-            np.logical_not(np.logical_and(np.isfinite(ttc), ttc < 3.5)),
+            np.logical_not(np.logical_and(np.isfinite(ttc), ttc < 4.5)),
         ]
     )
     segments = []
-    for seg in mask_to_segments(frame.time_s, merge_short_gaps(frame.time_s, mask, 0.5)):
+    for seg in mask_to_segments(frame.time_s, mask):
         if seg.sample_count() < 50:
             continue
         if int(np.sum(curvature[seg.start : seg.end + 1] > 0.004)) < 5:
@@ -738,13 +816,52 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
         distance = frame.col("front_range", np.inf).astype(float)[seg.start : seg.end + 1]
         return min_with_time(t, distance, extra)
     if measure == "stop_front_distance":
-        distance = float(frame.col("front_range", np.nan).astype(float)[seg.end])
-        stationary = bool(frame.col("stationary_flag", 0).astype(bool)[seg.end])
-        if not stationary or not np.isfinite(distance):
-            return None, None, extra
-        extra["stop_index"] = int(seg.end)
-        extra["distance_sample"] = "first_stationary_frame"
-        return distance, float(frame.time_s[seg.end]), extra
+        stop_time = float(full_t[seg.end])
+        end_time = stop_time + 2.0
+        extra.update(
+            stop_time_s=stop_time, observation_end_time_s=end_time,
+            stable_window_start_time_s=stop_time + 1.0,
+            stable_window_end_time_s=end_time,
+            distance_sample="median_1_to_2_seconds_after_stop",
+        )
+        end = int(np.searchsorted(full_t, end_time - 1e-9, side="left"))
+        reason = None
+        if end >= frame.length:
+            reason = "刹停后不足完整2秒数据"
+        else:
+            window = slice(seg.end, end + 1)
+            targets = frame.col("front_target_id")[window]
+            distance = frame.col("front_range")[window].astype(float)
+            velocity = frame.col("front_velocity_abs")[window].astype(float)
+            if np.any(np.diff(full_t[window]) > 0.2 + 1e-9):
+                reason = "观察窗口存在超过0.2秒采样缺口"
+            elif not np.all(frame.col("stationary_flag")[window]):
+                reason = "观察窗口自车重新移动"
+            elif not np.all(frame.col("acc_active_flag")[window]):
+                reason = "观察窗口ACC退出"
+            elif not np.all(frame.col("front_valid")[window]) or not np.all(np.isfinite(targets)) or targets[0] == 0:
+                reason = "观察窗口前车目标丢失或无效"
+            elif not np.all(targets == targets[0]):
+                reason = "观察窗口前车目标切换"
+            elif not np.all(np.isfinite(velocity)):
+                reason = "观察窗口前车速度无效"
+            elif np.any(np.abs(velocity) > FOLLOW_STOP_FRONT_STOP_SPEED_MPS):
+                reason = "观察窗口前车未静止或重新起步"
+            elif not np.all(np.isfinite(distance)) or np.any(distance <= 0):
+                reason = "观察窗口前车距离无效"
+            else:
+                stable = (
+                    (full_t >= stop_time + 1.0 - 1e-9)
+                    & (full_t <= end_time + 1e-9)
+                )
+                if np.count_nonzero(stable) < 3:
+                    reason = "稳定取值窗口有效采样不足3个"
+                else:
+                    extra["observation_end_index"] = end
+                    extra["stable_sample_count"] = int(np.count_nonzero(stable))
+                    return float(np.median(frame.col("front_range")[stable])), end_time, extra
+        extra["excluded_reason"] = reason
+        return None, None, extra
     if measure == "speed_inflections":
         return float(count_speed_inflections(t, speed_window())), None, extra
     if measure == "velocity_fluct":

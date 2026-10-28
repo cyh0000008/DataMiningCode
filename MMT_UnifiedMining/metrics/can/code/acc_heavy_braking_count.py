@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from jerk_utils import JERK_PARAMETERS, sustained_jerk
+import math
+
 import time
 from pathlib import Path
 from typing import Any
@@ -129,15 +132,13 @@ def count_acc_heavy_braking_events(
         for acc_on, override in zip(acc_active_values, pedal_override_values)
     ]
 
-    smoothed_acc = _moving_average(accel_values, acceleration_smoothing_window)
-    jerk_raw: list[float] = []
-    for index in range(1, len(smoothed_acc)):
-        dt = axis[index] - axis[index - 1]
-        jerk_raw.append(0.0 if dt <= 0 else (smoothed_acc[index] - smoothed_acc[index - 1]) / dt)
-    filtered_jerk = _moving_average(jerk_raw, jerk_smoothing_window)
+    smoothed_acc, jerk_values = sustained_jerk(
+        axis, accel_values, acceleration_smoothing_window, jerk_smoothing_window,
+    )
+    filtered_jerk = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_valid_mask = [valid_mask[index] and valid_mask[index - 1] for index in range(1, len(axis))]
+    candidate_valid_mask = [valid_mask[index] and valid_mask[index - 1] and math.isfinite(filtered_jerk[index - 1]) for index in range(1, len(axis))]
     accel_candidates = smoothed_acc[1:]
     qualified_sample_count = sum(candidate_valid_mask)
 
@@ -175,8 +176,7 @@ def count_acc_heavy_braking_events(
         "end_timestamp": end_timestamp,
         "max_event_severity": max_event_severity,
         "parameters": {
-            "acceleration_smoothing_window": acceleration_smoothing_window,
-            "jerk_smoothing_window": jerk_smoothing_window,
+            **JERK_PARAMETERS,
             "heavy_brake_accel_threshold": heavy_brake_accel_threshold,
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "decel_jump_window_seconds": decel_jump_window_seconds,
@@ -532,8 +532,7 @@ def _empty_result(
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
         "parameters": {
-            "acceleration_smoothing_window": acceleration_smoothing_window,
-            "jerk_smoothing_window": jerk_smoothing_window,
+            **JERK_PARAMETERS,
             "heavy_brake_accel_threshold": heavy_brake_accel_threshold,
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "decel_jump_window_seconds": decel_jump_window_seconds,

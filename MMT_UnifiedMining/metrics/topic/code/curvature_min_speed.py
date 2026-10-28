@@ -227,7 +227,7 @@ def _find_risk_segments(
     risk_segments = []
     current_candidate = []  # 存储连续满足条件的综合帧
     C_min_risk_segment_length = 50  # 有效风险段落最小帧数（可根据需求调整）
-    C_min_ttc = 3.5
+    C_min_ttc = 4.5
     C_min_stop_dis = 50
     C_min_curv_frames = 5  # 段落内需满足curvature_val>0.004的最小帧数
     C_CURVATURE_THRESH = 0.004  # 曲率阈值
@@ -245,7 +245,7 @@ def _find_risk_segments(
             # -------------------- Debug 日志：当前帧核心参数 --------------------
             write_debug_log(f"\n[DEBUG] 处理第 {idx} 帧（UNP时间戳：{comp_frame.get('unp_timestamp_ms', '未知')}）：")
             write_debug_log(f"  - 基础条件：f_np_on={curr_params['f_np_on']} | f_curvature_control_on={curr_params['f_curvature_control_on']}")
-            write_debug_log(f"  - 新增条件1：fusion_ttc={curr_params['fusion_ttc']}（需>10）")
+            write_debug_log(f"  - 新增条件1：fusion_ttc={curr_params['fusion_ttc']}（需≥{C_min_ttc}或无）")
             write_debug_log(f"  - 新增条件2：f_redlight={curr_params['f_redlight']} | f_stop_dis={curr_params['f_stop_dis']}（需不同时满足redlight=True+stop_dis<50）")
             write_debug_log(f"  - 新增条件3：f_stationary={curr_params['f_stationary']}（需=False）")
             write_debug_log(f"  - 曲率参数：curvature_val={curr_params['curvature_val']:.6f}（阈值={C_CURVATURE_THRESH}）")

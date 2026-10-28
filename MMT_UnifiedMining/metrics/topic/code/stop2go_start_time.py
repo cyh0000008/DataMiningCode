@@ -244,7 +244,7 @@ def _find_risk_segments(
     risk_segments = []
     current_candidate = []  # 存储当前连续满足条件的帧
     C_min_segment_length = 50  # 段落最小帧数（条件9），可根据需求调整
-    C_min_ttc = 3.5  # TTC阈值（条件2）
+    C_min_ttc = 4.5  # TTC阈值（条件2）
     C_min_stop_dis = 50.0  # 红灯停止距离阈值（条件3）
     C_min_end_vel = 8.0
 

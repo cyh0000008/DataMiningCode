@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from jerk_utils import JERK_PARAMETERS, sustained_jerk, jerk_from_acceleration
+import numpy as np
+
 import math
 import time
 from bisect import bisect_left, bisect_right
@@ -349,14 +352,11 @@ def evaluate_acc_jerkiness_from_axis(
         valid_mask = valid_mask[:usable_length]
     accel_values = [_safe_float(value) for value in accel_values]
 
-    smoothed_acceleration = _moving_average(accel_values, smoothing_window)
-    slope = []
-    for index in range(1, len(smoothed_acceleration)):
-        dt = axis[index] - axis[index - 1]
-        slope.append(0.0 if dt <= 0 else (smoothed_acceleration[index] - smoothed_acceleration[index - 1]) / dt)
+    smoothed_acceleration, jerk_values = sustained_jerk(axis, accel_values, smoothing_window)
+    slope = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_mask = [valid_mask[index] and valid_mask[index - 1] for index in range(1, len(axis))]
+    candidate_mask = [valid_mask[index] and valid_mask[index - 1] and math.isfinite(slope[index - 1]) for index in range(1, len(axis))]
     valid_sample_count = sum(candidate_mask)
 
     original_candidate_mask = _detect_oscillation_candidates(
@@ -600,7 +600,7 @@ def _filter_events_by_torque_match(
         smooth - trend if _is_finite(smooth) and _is_finite(trend) else float("nan")
         for smooth, trend in zip(acceleration_smooth, acceleration_trend)
     ]
-    jerk = _derivative(axis, acceleration_smooth)
+    jerk = jerk_from_acceleration(np.asarray(axis), np.asarray(acceleration_values)).tolist()
     drive_torque = _time_window_moving_average(axis, drive_torque_values, torque_smoothing_window_seconds)
     brake_torque = _time_window_moving_average(axis, brake_torque_values, torque_smoothing_window_seconds)
     drive_rate = _derivative(axis, drive_torque)
@@ -753,7 +753,7 @@ def _make_jerkiness_result(
     events: list[dict[str, float | int | str]],
     start_timestamp: float,
     end_timestamp: float,
-    parameters: dict[str, float | int],
+    parameters: dict[str, float | int | str],
 ) -> dict[str, object]:
     return {
         "metric_name": metric_name,
@@ -808,9 +808,9 @@ def _jerkiness_parameters(
     min_drive_rate_peak_near_positive_jerk: float,
     min_brake_rate_peak_near_negative_jerk: float,
     min_direction_samples: int,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | str]:
     return {
-        "smoothing_window": smoothing_window,
+        **JERK_PARAMETERS,
         "deadband": deadband,
         "min_oscillation_amplitude": min_oscillation_amplitude,
         "min_sign_flips": min_sign_flips,
@@ -1835,7 +1835,7 @@ def _empty_result(
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
         "parameters": {
-            "smoothing_window": smoothing_window,
+            **JERK_PARAMETERS,
             "deadband": deadband,
             "min_oscillation_amplitude": min_oscillation_amplitude,
             "min_sign_flips": min_sign_flips,

@@ -3,6 +3,8 @@ import re
 import traceback
 import json
 import time
+import math
+import statistics
 from typing import List, Dict, Optional, Tuple, Any, Union  # 新增Any/Union，修复3.8兼容
 import sys
 current_dir = os.path.abspath(os.getcwd())
@@ -77,21 +79,42 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     case_statistics: Dict = {}
 
     case_statistics = {
-        "All Case Count": len(risk_segments),
+        "All Case Count": 0,
         "Bad Case": 0,
+        "Excluded Case": 0,
         "Severity Score": float(0.0)
     }
+    frame_indices = {id(frame): index for index, frame in enumerate(comprehensive_frames)}
     for i,segment in enumerate(risk_segments):
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
-        (stop_lon_dis, curr_lat_dis, curr_vel, stop_dis_time) = _calc_segment_stop_frntdis(segment)
+        observation = _measure_stable_stop_distance(
+            segment, comprehensive_frames, frame_indices[id(segment[-1])],
+        )
+        if observation.get("excluded_reason"):
+            case_statistics["Excluded Case"] += 1
+            stop_frntobj_dis_values.append(
+                "[未统计跟车刹停距离 time:%s, 原因:%s]" % (
+                    observation.get("stop_time_ms"), observation["excluded_reason"],
+                )
+            )
+            continue
+        stop_lon_dis = observation["distance"]
+        stop_dis_time = observation["stop_time_ms"]
+        curr_lat_dis = observation["lateral_distance"]
+        curr_vel = observation["ego_speed"]
+        case_statistics["All Case Count"] += 1
+        window_description = (
+            ", stable_window_ms:[%.3f,%.3f], distance_sample:median, sample_count:%d"
+            % (stop_dis_time + 1000, stop_dis_time + 2000, observation["sample_count"])
+        )
         if stop_lon_dis is not None:
             if _check_stop_frntobj_dis_valid(stop_lon_dis, dis_lower_bound, dis_upper_bound) is not True:
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(stop_lon_dis, dis_lower_bound, dis_upper_bound))
                 check_result = True
-                stop_frntobj_dis_values.append(f"[StopFrntObjDis Dangerous! time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
+                stop_frntobj_dis_values.append(f"[StopFrntObjDis Dangerous! time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}{window_description}]")
             else:
-                stop_frntobj_dis_values.append(f"[time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}]")
+                stop_frntobj_dis_values.append(f"[time:{stop_dis_time} , stop_obj_pos:(lon_dis:{stop_lon_dis:.6f}, lat_dis:{curr_lat_dis:.6f}), curr_vel: {curr_vel:.6f}{window_description}]")
 
     return (check_result, stop_frntobj_dis_values, case_statistics)
 
@@ -103,7 +126,10 @@ def _check_stop_frntobj_dis_valid(
 
     ref_frntobj_dis = stop_frntobj_dis
 
-    if ref_frntobj_dis >= C_dis_lower_bound and ref_frntobj_dis <= C_dis_upper_bound:
+    if (
+        (ref_frntobj_dis >= C_dis_lower_bound or math.isclose(ref_frntobj_dis, C_dis_lower_bound, rel_tol=0, abs_tol=1e-9))
+        and (ref_frntobj_dis <= C_dis_upper_bound or math.isclose(ref_frntobj_dis, C_dis_upper_bound, rel_tol=0, abs_tol=1e-9))
+    ):
         return True
     else:
         return False
@@ -116,7 +142,7 @@ def _cal_severity_score(
 
     ref_frntobj_dis = min_frntobj_dis
 
-    if ref_frntobj_dis >= C_dis_lower_bound and ref_frntobj_dis <= C_dis_upper_bound:
+    if _check_stop_frntobj_dis_valid(ref_frntobj_dis, C_dis_lower_bound, C_dis_upper_bound):
         return 0.0
     else:
         C_cal_base = 2  #严重程度得分100分的越限基准
@@ -200,32 +226,81 @@ def _find_risk_segments(
     print(f"————————————找到 {len(risk_segments)} 个跟停连续风险段落————————————————")
     return risk_segments
 
-def _calc_segment_stop_frntdis(
-    segment: List[Dict]
-) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """读取跟停场景首次 stationary 帧上的前车距离。"""
-    for unp_para in reversed(segment):
-        unp_frame_data = unp_para.get("unp_frame_data", {})
-        base_time_ms = lonprepro._get_unp_fusion_meta_time(unp_frame_data)
-        if base_time_ms is None:
-            continue
-        chassis_base_time_ms = lonprepro._get_unp_chassis_meta_time(unp_frame_data)
-        if chassis_base_time_ms is None:
-            continue
+def _finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(value)
 
-        matched_chassis = unp_para.get("matched_chassis", {})
-        if not matched_chassis or not matched_chassis.get("stationary", False):
-            continue
-        matched_fusion = unp_para.get("matched_fusion", {})
-        if matched_fusion:
-            curr_min_lon_dis = matched_fusion.get("closest_obj_x")
-            curr_min_lat_dis = matched_fusion.get("closest_obj_y")
-            curr_min_len = matched_fusion.get("closest_obj_len")
-            vel = matched_chassis.get("vehicle_speed_average")
-            if all(value is not None for value in (curr_min_lon_dis, curr_min_lat_dis, curr_min_len, vel)):
-                C_EgoRearWhell2Frnt_dis = 3.8
-                stop_distance = float(curr_min_lon_dis) - 0.5 * float(curr_min_len) - C_EgoRearWhell2Frnt_dis
-                return (stop_distance, float(curr_min_lat_dis), float(vel), float(base_time_ms))
 
-    print("警告：当前风险段落的刹停帧无有效前车距离数据")
-    return (None, None, None, None)
+def _measure_stable_stop_distance(segment: List[Dict], frames: List[Dict], stop_index: int) -> Dict[str, Any]:
+    stop_time = lonprepro._get_unp_fusion_meta_time(segment[-1].get("unp_frame_data", {}))
+    result: Dict[str, Any] = {"stop_time_ms": stop_time}
+
+    def exclude(reason: str) -> Dict[str, Any]:
+        result["excluded_reason"] = reason
+        return result
+
+    if not _finite(stop_time):
+        return exclude("刹停时刻无效")
+    target_id = segment[-1].get("matched_fusion", {}).get("closest_obj_id")
+    if target_id is None:
+        return exclude("缺少前车track_id，无法确认同一目标")
+    end_time = stop_time + 2000.0
+    distances: Dict[float, float] = {}
+    previous_time = None
+    reached_end = False
+    for frame_index in range(stop_index, len(frames)):
+        frame = frames[frame_index]
+        unp = frame.get("unp_frame_data", {})
+        timestamp = lonprepro._get_unp_fusion_meta_time(unp)
+        chassis_time = lonprepro._get_unp_chassis_meta_time(unp)
+        if not _finite(timestamp) or not _finite(chassis_time):
+            return exclude("观察窗口缺少有效时间戳")
+        if previous_time is not None:
+            if timestamp < previous_time:
+                return exclude("观察窗口时间戳倒序")
+            if timestamp - previous_time > 200.0 + 1e-6:
+                return exclude("观察窗口存在超过0.2秒采样缺口")
+        previous_time = timestamp
+        if abs(chassis_time - timestamp) > 200.0 + 1e-6:
+            return exclude("观察窗口底盘与融合时间相差超过0.2秒")
+        chassis = frame.get("matched_chassis") or {}
+        fusion = frame.get("matched_fusion") or {}
+        for data, reference_time in ((chassis, chassis_time), (fusion, timestamp)):
+            matched_time = data.get("timestamp_ms")
+            if not _finite(matched_time) or abs(matched_time - reference_time) > 200.0 + 1e-6:
+                return exclude("观察窗口底盘或融合匹配数据缺失、过期")
+        if not chassis.get("stationary", False):
+            return exclude("观察窗口自车重新移动")
+        if not unp.get("NP_State", {}).get("f_Np_on", False):
+            return exclude("观察窗口NP退出")
+        if fusion.get("closest_obj_id") is None or not fusion.get("has_valid_fusion_data", False):
+            return exclude("观察窗口前车目标丢失或无效")
+        if fusion["closest_obj_id"] != target_id:
+            return exclude("观察窗口前车目标切换")
+        velocity = fusion.get("closest_obj_vel")
+        if not _finite(velocity):
+            return exclude("观察窗口前车速度无效")
+        if abs(velocity) > 0.2:
+            return exclude("观察窗口前车未静止或重新起步")
+        x, length = fusion.get("closest_obj_x"), fusion.get("closest_obj_len")
+        if not _finite(x) or x <= 0 or not _finite(length) or length <= 0:
+            return exclude("观察窗口前车距离或车长无效")
+        distance = x - length / 2.0 - 3.8
+        if stop_time + 1000.0 - 1e-6 <= timestamp <= end_time + 1e-6:
+            distances[timestamp] = distance
+        if timestamp >= end_time - 1e-6:
+            reached_end = True
+            break
+    if not reached_end:
+        return exclude("刹停后不足完整2秒数据")
+    if len(distances) < 3:
+        return exclude("稳定取值窗口有效采样不足3个")
+    stop_frame = segment[-1]
+    lateral = stop_frame.get("matched_fusion", {}).get("closest_obj_y")
+    ego_speed = stop_frame.get("matched_chassis", {}).get("vehicle_speed_average")
+    if not _finite(lateral) or not _finite(ego_speed):
+        return exclude("刹停帧横向距离或自车速度无效")
+    result.update(
+        distance=float(statistics.median(distances.values())), sample_count=len(distances),
+        lateral_distance=float(lateral), ego_speed=float(ego_speed),
+    )
+    return result

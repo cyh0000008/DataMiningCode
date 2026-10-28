@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from jerk_utils import sustained_jerk
+import math
+
 import time
 from typing import Any
 
@@ -87,15 +90,13 @@ def count_topic_acc_heavy_braking_events(
         for acc_on, override in zip(series["acc_active"], series["pedal_override"])
     ]
 
-    smoothed_acc = _CAN._moving_average(accel_values, acceleration_smoothing_window)
-    jerk_raw: list[float] = []
-    for index in range(1, len(smoothed_acc)):
-        dt = axis[index] - axis[index - 1]
-        jerk_raw.append(0.0 if dt <= 0 else (smoothed_acc[index] - smoothed_acc[index - 1]) / dt)
-    filtered_jerk = _CAN._moving_average(jerk_raw, jerk_smoothing_window)
+    smoothed_acc, jerk_values = sustained_jerk(
+        axis, accel_values, acceleration_smoothing_window, jerk_smoothing_window,
+    )
+    filtered_jerk = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_valid_mask = [valid_mask[index] and valid_mask[index - 1] for index in range(1, len(axis))]
+    candidate_valid_mask = [valid_mask[index] and valid_mask[index - 1] and math.isfinite(filtered_jerk[index - 1]) for index in range(1, len(axis))]
     accel_candidates = smoothed_acc[1:]
     qualified_sample_count = sum(candidate_valid_mask)
 

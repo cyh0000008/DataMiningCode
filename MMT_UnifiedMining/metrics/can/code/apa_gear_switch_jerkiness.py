@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from jerk_utils import JERK_PARAMETERS, sustained_jerk, time_window_linear_slope
+import math
+import numpy as np
+
 import time
 from pathlib import Path
 from typing import Any
@@ -121,7 +125,7 @@ def analyze_apa_gear_switch_jerkiness(
         return _empty_metric_result(start_timestamp, end_timestamp, switch_window_seconds)
 
     accel_values = [float(value) for value in accel_values_raw]
-    smoothed_acceleration = _moving_average(accel_values, smoothing_window)
+    smoothed_acceleration, _ = sustained_jerk(accel_axis, accel_values, smoothing_window)
     apa_type_values = session.sample_signal_to_axis(
         SIGNAL_KEYS["apa_type"], accel_axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
@@ -211,6 +215,7 @@ def analyze_apa_gear_switch_jerkiness(
         "start_timestamp": start_timestamp,
         "end_timestamp": end_timestamp,
         "parameters": {
+            **JERK_PARAMETERS,
             "switch_window_seconds": switch_window_seconds,
             "drive_gear_values": sorted(DRIVE_GEAR_VALUES),
             "reverse_gear_values": sorted(REVERSE_GEAR_VALUES),
@@ -243,13 +248,12 @@ def _detect_jerk_events_on_window(
     decel_jump_min_jump_slope: float,
     decel_jump_min_rebound_slope: float,
 ) -> list[dict[str, float | int | str]]:
-    slope = []
-    for index in range(1, len(smoothed_acceleration)):
-        dt = timestamps[index] - timestamps[index - 1]
-        slope.append(0.0 if dt <= 0 else (smoothed_acceleration[index] - smoothed_acceleration[index - 1]) / dt)
+    slope = time_window_linear_slope(
+        np.asarray(timestamps, dtype=float), np.asarray(smoothed_acceleration, dtype=float), 0.3,
+    ).tolist()[1:]
 
     candidate_timestamps = timestamps[1:]
-    candidate_mask = [True] * len(candidate_timestamps)
+    candidate_mask = [math.isfinite(value) for value in slope]
     if len(candidate_timestamps) < 2:
         return []
 
@@ -1139,7 +1143,7 @@ def _empty_result(
         "end_timestamp": end_timestamp,
         "max_event_severity": 0.0,
         "parameters": {
-            "smoothing_window": smoothing_window,
+            **JERK_PARAMETERS,
             "deadband": deadband,
             "min_oscillation_amplitude": min_oscillation_amplitude,
             "min_sign_flips": min_sign_flips,

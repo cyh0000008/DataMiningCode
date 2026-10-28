@@ -15,9 +15,11 @@ class BadCaseNameTests(unittest.TestCase):
                 result = subprocess.run(
                     [sys.executable, "-c", """
 import csv
+import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 from openpyxl import load_workbook
 from metric_display_names import METRIC_DISPLAY_NAMES, metric_display_name
 
@@ -40,17 +42,23 @@ for chinese in SIGNAL_MAP:
 
 with tempfile.TemporaryDirectory() as folder:
     work = Path(folder)
-    names = ("follow_stop_min_jerk", "acc_exit_after_abs",
-             "driving_uninterfered_accel_max_acc_0_30")
+    retained = ("follow_stop_min_jerk", "acc_exit_after_abs")
+    excluded = tuple(name for name in METRIC_DISPLAY_NAMES
+                     if name.startswith("driving_uninterfered_accel_"))
+    assert len(excluded) == 12, excluded
+    names = retained + excluded
     if profile == "J6B":
-        from bad_case_report import write_bad_case_xlsx
+        from bad_case_report import write_bad_case_report
         from bad_case_image_report import read_cases
-        output = work / "bad_case_report.xlsx"
-        write_bad_case_xlsx([
-            dict(category="CPI", metric_name=name, source_path="synthetic.h5",
-                 start_s=1, end_s=2, severity=5)
-            for name in names
-        ], output)
+        config = work / "bad_case_extract.json"
+        config.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        metrics = [SimpleNamespace(name=name, category="CPI") for name in names]
+        for name in names:
+            (work / f"{name}_events.json").write_text(json.dumps([{
+                "metric_name": name, "source_path": "synthetic.h5",
+                "events": [{"start_s": 1, "end_s": 2, "severity": 5}],
+            }]), encoding="utf-8")
+        output = write_bad_case_report(work, config, metrics)
     else:
         from DataMining import (BadCaseExtractConfig, BadCaseExtractRule,
                                 generate_bad_case_extract_report)
@@ -71,16 +79,41 @@ with tempfile.TemporaryDirectory() as folder:
         ws = wb.active
         headers = {cell.value: cell.column for cell in ws[1]}
         actual = {ws.cell(row, headers["指标名称"]).value for row in range(2, ws.max_row + 1)}
-        assert actual == {metric_display_name(name) for name in names}, actual
+        assert actual == {metric_display_name(name) for name in retained}, actual
         keys = {ws.cell(row, headers["指标Key"]).value for row in range(2, ws.max_row + 1)}
-        expected = set(names) if profile == "J6B" else {"topic__" + name for name in names}
+        expected = set(retained) if profile == "J6B" else {"topic__" + name for name in retained}
         assert keys == expected, keys
         if profile == "J6B":
             cases = read_cases(ws, headers)
-            assert {case.metric_name for case in cases} == set(names)
+            assert {case.metric_name for case in cases} == set(retained)
             del headers["指标Key"]
             legacy = read_cases(ws, headers)
             assert {case.metric_name for case in legacy} == actual
+    finally:
+        wb.close()
+    # Report filtering must leave every per-metric source record untouched.
+    for name in names:
+        path = (work / f"{name}_events.json" if profile == "J6B"
+                else work / f"topic__{name}_{stamp}.csv")
+        if profile == "J6B":
+            assert json.loads(path.read_text(encoding="utf-8"))[0]["events"][0]["severity"] == 5
+        else:
+            with path.open(encoding="utf-8-sig", newline="") as stream:
+                assert next(csv.DictReader(stream))["Bad Case"] == "1"
+    # An excluded-only run still writes the standard empty report.
+    if profile == "J6B":
+        output = write_bad_case_report(work, config, [m for m in metrics if m.name in excluded])
+    else:
+        for name in retained:
+            (work / f"topic__{name}_{stamp}.csv").unlink()
+        output = generate_bad_case_extract_report(
+            work, stamp, BadCaseExtractConfig(True, "bad_case_report.xlsx",
+                                             BadCaseExtractRule(), {}, {}))
+    wb = load_workbook(output)
+    try:
+        ws = wb.active
+        key_column = next(cell.column for cell in ws[1] if cell.value == "指标Key")
+        assert all(ws.cell(row, key_column).value is None for row in range(2, ws.max_row + 1))
     finally:
         wb.close()
 """, profile],

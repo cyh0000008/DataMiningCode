@@ -51,19 +51,14 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 - `IAccPdlOvrrdAtv == false`
 - `IVehSpdAvgDrvn_1 > 0`
 
-斜率计算依赖相邻采样点，所以候选点要求当前点和前一个点都满足有效样本条件。
+保留当前点和前一个点均满足场景条件的门控；无有效 jerk 拟合结果的点不作为候选。
 
 ## 5. 基础计算
 
-纵向加速度先做滑动平均：
-
-- `smoothing_window = 5`
-
-再计算平滑后相邻点斜率：
-
-- `slope = delta_acc / delta_t`
-
-如果相邻点 `dt <= 0`，该点斜率按 `0` 处理。
+纵向加速度先做 0.3 秒居中时间窗平均，再在 0.3 秒居中时间窗内进行多点线性拟合，
+以拟合斜率作为 jerk。不做相邻点差分或 jerk 二次平滑。拟合至少需要 3 个有限值，
+有效时间跨度至少 0.15 秒，不足时为 NaN；时间轴非有限或非严格递增时明确报错。
+`smoothing_window=5` 仅保留默认调用兼容，不再表示实际窗口。
 
 ## 6. 顿挫识别
 
@@ -215,7 +210,7 @@ override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
 ## 13. 默认参数
 
 - `post_override_window_seconds = 2.0`
-- `smoothing_window = 5`
+- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒（旧 `smoothing_window=5` 仅兼容默认调用）
 - `deadband = 0.8`
 - `min_oscillation_amplitude = 0.75`
 - `min_sign_flips = 1`

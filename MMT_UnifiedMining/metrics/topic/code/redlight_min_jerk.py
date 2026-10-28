@@ -1,3 +1,4 @@
+from jerk_utils import jerk_extreme_with_time
 import os
 import re
 import traceback
@@ -293,107 +294,6 @@ def _calc_segment_min_jerk(
 
     return (min_jerk, min_jerk_time, start_vel)
 
-def calculate_min_smoothed_jerk_with_time(acc_with_time: List[Tuple[Optional[float], Optional[float]]]) -> Optional[Tuple[Optional[float], Optional[float]]]:
-    """
-    跨平台计算acc_with_time中各点的平滑jerk值，返回(最小jerk值, 对应时刻ms)的元组
-    仅使用Python内置模块，排除首尾点，jerk结果平滑
-    :param acc_with_time: 列表，每个元素是(加速度, 时刻ms)的元组，值可能为None
-    :return: 元组(最小平滑jerk值, 对应时刻ms)，无效数据返回None
-    """
-    # ========== 步骤1：数据预处理（过滤无效值+排序+去重） ==========
-    valid_points = []
-    for acc, t_ms in acc_with_time:
-        if (acc is not None and t_ms is not None and 
-            isinstance(acc, (int, float)) and isinstance(t_ms, (int, float)) and 
-            t_ms > 0):
-            valid_points.append((float(acc), float(t_ms)))
-    
-    if len(valid_points) < 3:
-        print("警告：有效数据点不足3个，无法计算中间点的jerk")
-        return None
-    
-    # 按时间排序
-    valid_points.sort(key=lambda x: x[1])
-    
-    # 去重时间点
-    unique_points = []
-    seen_times = set()
-    for acc, t_ms in reversed(valid_points):
-        if t_ms not in seen_times:
-            seen_times.add(t_ms)
-            unique_points.append((acc, t_ms))
-    unique_points.reverse()
-    if len(unique_points) < 3:
-        print("警告：去重后有效数据点不足3个")
-        return None
-
-    # ========== 步骤2：计算原始jerk值 + 关联对应时刻（排除首尾） ==========
-    raw_jerk_with_time = []  # 存储(原始jerk, 对应时刻ms)
-    time_list = [p[1] for p in unique_points]
-    acc_list = [p[0] for p in unique_points]
-    
-    for i in range(1, len(unique_points)-1):  # 仅计算中间点
-        t_prev = time_list[i-1] / 1000.0
-        t_curr = time_list[i] / 1000.0
-        t_next = time_list[i+1] / 1000.0
-        
-        # 避免除零
-        dt_prev = t_curr - t_prev
-        dt_next = t_next - t_curr
-        if abs(dt_prev) < 1e-6 or abs(dt_next) < 1e-6:
-            raw_jerk_with_time.append((0.0, time_list[i]))
-            continue
-        
-        # 中心差分法计算jerk
-        a_prev = acc_list[i-1]
-        a_curr = acc_list[i]
-        a_next = acc_list[i+1]
-        delta_a = a_next - a_prev
-        delta_t = t_next - t_prev
-        jerk = delta_a / delta_t if abs(delta_t) > 1e-6 else 0.0
-        
-        # 存储jerk值 + 对应的原始时刻（ms）
-        raw_jerk_with_time.append((jerk, time_list[i]))
-    
-    if not raw_jerk_with_time:
-        print("警告：无有效中间点可计算jerk")
-        return None
-
-    # ========== 步骤3：平滑jerk值 + 保留时刻关联 ==========
-    # 平滑处理，保留时刻关联
-    C_sliding_window_size = 5
-    smoothed_jerk_time = sliding_average_with_time(raw_jerk_with_time, C_sliding_window_size)
-
-    # ========== 步骤4：找到最小jerk值 + 对应的时刻 ==========
-    # 按jerk绝对值找最小值（更符合“最小变化率”业务含义）
-    min_jerk_item = min(smoothed_jerk_time, key=lambda x: x[0])
-    min_jerk = min_jerk_item[0]
-    min_jerk_time_ms = min_jerk_item[1]
-
-    # 返回(最小jerk值, 对应时刻ms)的元组
-    return (min_jerk, min_jerk_time_ms)
-
-def sliding_average_with_time(jerk_time_list: List[Tuple[float, float]], window_size: int = 5) -> List[Tuple[float, float]]:  # 修改20：修正参数类型注解（去除Optional，因为已过滤）
-    """纯内置实现滑动平均，保留jerk与时刻的关联"""
-    if window_size < 2 or len(jerk_time_list) <= window_size:
-        return jerk_time_list.copy()
-    
-    # 拆分jerk和时刻，分别处理
-    jerks = [jt[0] for jt in jerk_time_list]
-    times = [jt[1] for jt in jerk_time_list]
-    
-    # 镜像填充jerk值（时刻无需填充，保持原顺序）
-    pad_left = [jerks[0]] * (window_size // 2)
-    pad_right = [jerks[-1]] * (window_size // 2)
-    padded_jerks = pad_left + jerks + pad_right
-    
-    # 计算平滑jerk，并关联原时刻
-    smoothed_jerk_time = []
-    for i in range(len(jerks)):
-        start = i
-        end = start + window_size
-        window_jerks = padded_jerks[start:end]
-        smoothed_jerk = sum(window_jerks) / len(window_jerks)
-        smoothed_jerk_time.append((smoothed_jerk, times[i]))
-    
-    return smoothed_jerk_time
+def calculate_min_smoothed_jerk_with_time(acc_with_time: List[Tuple[Optional[float], Optional[float]]]) -> Optional[Tuple[float, float]]:
+    """Return window-fitted jerk and its original millisecond timestamp."""
+    return jerk_extreme_with_time(acc_with_time, "min")

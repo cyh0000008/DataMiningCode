@@ -109,7 +109,7 @@ with tempfile.TemporaryDirectory() as folder:
     event = measured.events[0]
     assert event.values["screening_lower"] == -2.3
     expected_jerk = jerk_from_acceleration(t, accel)
-    assert abs(event.values["screening_value"] - np.min(expected_jerk[:201])) < 1e-8
+    assert abs(event.values["screening_value"] - np.nanmin(expected_jerk[:201])) < 1e-8
     assert event.values["value_time_s"] >= 3
     # Actual end-to-end entry point reopens the synthetic H5 and embeds both CPI and MPI plots.
     config["bad_case_extract_config"] = str(work / "bad_case_extract.json")

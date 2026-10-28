@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from metric_utils import BaseMetric, MetricEvent, MetricResult, event_from_segment, find_scene_segments, measure_segment, result_from_events, severity_outside, within_bounds
+from metric_utils import BaseMetric, MetricEvent, MetricResult, Segment, event_from_segment, find_scene_segments, measure_segment, result_from_events, severity_outside, within_bounds
 from signal_preprocessor import SignalFrame
 from powertrain_utils import value_for_powertrain
 
@@ -21,12 +21,16 @@ class FollowStopMinFrntobjDisMetric(BaseMetric):
     def evaluate(self, frame: SignalFrame) -> MetricResult:
         segments = find_scene_segments(frame, self.scene)
         events: List[MetricEvent] = []
+        excluded: List[str] = []
         measured = 0
         for seg in segments:
             value, value_time, extra = measure_segment(frame, seg, self.measure)
             if value is None:
-                if self.bad_when_missing:
-                    events.append(event_from_segment(frame, seg, 100.0, "%s missing" % self.measure, extra))
+                excluded.append(
+                    "未统计：刹停时刻%.3fs，%s" % (
+                        frame.time_s[seg.end], extra["excluded_reason"],
+                    )
+                )
                 continue
             measured += 1
             lower, upper = value_for_powertrain(
@@ -49,14 +53,15 @@ class FollowStopMinFrntobjDisMetric(BaseMetric):
             events.append(
                 event_from_segment(
                     frame,
-                    seg,
+                    Segment(seg.start, int(extra["observation_end_index"])),
                     severity,
                     "%s=%.6f outside [%s, %s]" % (self.measure, value, lower, upper),
                     extra,
                 )
             )
-        total_cases = len(segments) if segments else measured
-        return result_from_events(self.name, self.category, frame, total_cases, events)
+        result = result_from_events(self.name, self.category, frame, measured, events)
+        result.details.extend(excluded)
+        return result
 
 
 def create_metric() -> BaseMetric:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from jerk_utils import sustained_jerk
+import math
+
 import time
 from typing import Any
 
@@ -111,14 +114,11 @@ def count_topic_acc_jerkiness_events(
         axis, series["acc_active"], series["pedal_override"]
     )
     valid_mask = [valid and not excluded for valid, excluded in zip(valid_mask, excluded_scene_mask)]
-    smoothed_acceleration = _CAN._moving_average(accel_values, smoothing_window)
-    slope: list[float] = []
-    for index in range(1, len(smoothed_acceleration)):
-        dt = axis[index] - axis[index - 1]
-        slope.append(0.0 if dt <= 0 else (smoothed_acceleration[index] - smoothed_acceleration[index - 1]) / dt)
+    smoothed_acceleration, jerk_values = sustained_jerk(axis, accel_values, smoothing_window)
+    slope = jerk_values[1:]
 
     candidate_timestamps = axis[1:]
-    candidate_mask = [valid_mask[index] and valid_mask[index - 1] for index in range(1, len(axis))]
+    candidate_mask = [valid_mask[index] and valid_mask[index - 1] and math.isfinite(slope[index - 1]) for index in range(1, len(axis))]
     valid_sample_count = sum(candidate_mask)
 
     original_candidate_mask = _CAN._detect_oscillation_candidates(

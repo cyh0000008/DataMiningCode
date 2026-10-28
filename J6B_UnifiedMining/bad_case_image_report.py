@@ -21,7 +21,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 
 from DataMining import h5_files_are_continuous, load_config
-from metric_utils import jerk_from_acceleration, time_window_moving_average
+from metric_utils import JERK_SMOOTHING_WINDOW_S, jerk_from_acceleration, time_window_moving_average
 from metric_display_names import metric_display_name
 from signal_preprocessor import SignalFrame, build_signal_frame, stitch_signal_frames
 
@@ -92,7 +92,7 @@ class FrameCache:
 
     def _build_frame(self, source_path: str, needed_end_s: float) -> SignalFrame:
         frame = build_signal_frame(source_path, self.config)
-        if frame.length < 2 or needed_end_s <= float(frame.time_s[-1]) + 0.5:
+        if frame.length < 2 or needed_end_s <= float(frame.time_s[-1]) + 1e-9:
             return frame
 
         h5_files = [str(Path(item).resolve()) for item in self.manifest.get("h5_files", [])]
@@ -522,6 +522,9 @@ def evidence_markers(case: CaseRow) -> List[Tuple[str, float]]:
         "positive_jerk_peak_time_s": "正jerk峰值",
         "negative_jerk_peak_time_s": "负jerk峰值",
         "release_timestamp": "override释放",
+        "stop_time_s": "刹停时刻",
+        "stable_window_start_time_s": "稳定取值起点",
+        "stable_window_end_time_s": "稳定取值终点",
     }
     return [
         (label, float(case.values[key])) for key, label in labels.items()
@@ -577,9 +580,17 @@ def build_evidence_panel(frame: SignalFrame, case: CaseRow, mask: np.ndarray) ->
         values = frame.col("front_range").astype(float)
         units = "m"
         if measure == "stop_front_distance":
-            sample_time = float(data["value_time_s"])
-            window[:] = False
-            window[int(np.argmin(np.abs(t - sample_time)))] = True
+            if data.get("distance_sample") == "median_1_to_2_seconds_after_stop":
+                scalar = True
+                window = (
+                    (t >= float(data["stable_window_start_time_s"]) - 1e-9)
+                    & (t <= float(data["stable_window_end_time_s"]) + 1e-9)
+                )
+                values = np.where(window, float(data["screening_value"]), np.nan)
+            else:
+                sample_time = float(data["value_time_s"])
+                window[:] = False
+                window[int(np.argmin(np.abs(t - sample_time)))] = True
     elif measure == "curvature_min_speed":
         values = frame.col("ego_speed_mps").astype(float)
         units = "m/s"
@@ -632,10 +643,18 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         ],
     )
     if frame.has("acceleration"):
-        jerk = jerk_from_acceleration(frame.time_s.astype(float), frame.col("acceleration").astype(float))
-        acc_lines.append(PlotLine("jerk", jerk[mask], (111, 66, 193)))
+        t = frame.time_s.astype(float)
+        acceleration = frame.col("acceleration").astype(float)
+        smoothed = time_window_moving_average(t, acceleration, JERK_SMOOTHING_WINDOW_S)
+        acc_lines.append(PlotLine("加速度（0.3s平滑）", smoothed[mask], (226, 139, 29)))
     if acc_lines:
-        panels.append(PlotPanel("加速度 / jerk", "m/s2 / m/s3", acc_lines))
+        panels.append(PlotPanel("纵向加速度", "m/s2", acc_lines))
+    if frame.has("acceleration"):
+        jerk = jerk_from_acceleration(t, acceleration)
+        panels.append(PlotPanel(
+            "持续 jerk（0.3s多点拟合）", "m/s3",
+            [PlotLine("jerk", jerk[mask], (111, 66, 193))],
+        ))
 
     speed_lines: List[PlotLine] = []
     if frame.has("ego_speed"):

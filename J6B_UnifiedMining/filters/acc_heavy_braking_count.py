@@ -4,7 +4,7 @@ from typing import List
 
 import numpy as np
 
-from metric_utils import BaseMetric, MetricEvent, MetricResult, derivative, event_from_segment, mask_to_segments, merge_short_gaps, moving_average, result_from_events
+from metric_utils import BaseMetric, MetricEvent, MetricResult, JERK_SMOOTHING_WINDOW_S, event_from_segment, jerk_from_acceleration, mask_to_segments, merge_short_gaps, result_from_events, time_window_moving_average
 from signal_preprocessor import SignalFrame
 
 
@@ -13,8 +13,6 @@ class AccHeavyBrakingCountMetric(BaseMetric):
     category = "MPI"
     result_mode = "event_count"
     required_fields = ("acceleration", "acc_active_flag", "pedal_override_flag")
-    acceleration_smoothing_window = 5
-    jerk_smoothing_window = 5
     heavy_brake_accel_threshold = -2.0
     decel_jump_threshold = 3.0
     decel_slope_threshold = 3.0
@@ -23,8 +21,9 @@ class AccHeavyBrakingCountMetric(BaseMetric):
     decel_jump_window_s = 1.00
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
-        accel = moving_average(frame.col("acceleration").astype(float), self.acceleration_smoothing_window)
-        jerk = moving_average(derivative(frame.time_s, accel), self.jerk_smoothing_window)
+        acceleration = frame.col("acceleration").astype(float)
+        accel = time_window_moving_average(frame.time_s, acceleration, JERK_SMOOTHING_WINDOW_S)
+        jerk = jerk_from_acceleration(frame.time_s, acceleration)
         valid = np.logical_and(frame.col("acc_active_flag"), np.logical_not(frame.col("pedal_override_flag")))
 
         mask = np.logical_and.reduce((
