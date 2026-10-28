@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import math
 import re
 import sys
@@ -133,9 +134,17 @@ def resolve_output_path(input_dir: Path, output: Optional[Path]) -> Path:
     return output
 
 
-def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 10.0) -> SyncStats:
+def run_check(
+    input_dir: Path,
+    output_path: Path,
+    edge_match_window_s: float = 10.0,
+    *,
+    input_files: Optional[Sequence[Path]] = None,
+    allow_no_samples: bool = False,
+    keep_examples_only: bool = False,
+) -> SyncStats:
     log("开始扫描 h5/hdf5 文件")
-    h5_files = collect_h5_files(input_dir)
+    h5_files = list(input_files) if input_files is not None else collect_h5_files(input_dir)
     if not h5_files:
         raise FileNotFoundError(f"未找到 h5 文件：{input_dir}")
     log(f"扫描完成，共找到 {len(h5_files)} 个 h5/hdf5 文件")
@@ -149,6 +158,7 @@ def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 1
     ethernet_edge_count = 0
     comparable_points = 0
     mismatch_points = 0
+    used_files = 0
 
     for file_index, h5_file in enumerate(h5_files, 1):
         file_start_time = time.perf_counter()
@@ -159,6 +169,7 @@ def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 1
             log("  跳过：缺少检查所需信号或时间戳")
             continue
         file_signals[h5_file] = signals
+        used_files += 1
 
         start_diffs.append(float(signals.ethernet_time[0] - signals.bus_time[0]))
         end_diffs.append(float(signals.ethernet_time[-1] - signals.bus_time[-1]))
@@ -207,21 +218,28 @@ def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 1
             f"采样点不一致 {mismatch}/{total}，"
             f"用时 {time.perf_counter() - file_start_time:.2f}秒"
         )
+        if keep_examples_only:
+            retained = set()
+            if matches:
+                retained = {
+                    min(matches, key=lambda item: abs(item.lag_s)).file_path,
+                    max(matches, key=lambda item: abs(item.lag_s)).file_path,
+                }
+            file_signals = {path: data for path, data in file_signals.items() if path in retained}
 
-    if not file_signals:
+    if not used_files and not allow_no_samples:
         raise RuntimeError("所有 h5 都缺少检查所需的两路标志位，无法生成 PNG。")
 
     log(
         "统计完成："
-        f"有效文件 {len(file_signals)}，跳过文件 {skipped_files}，"
+        f"有效文件 {used_files}，跳过文件 {skipped_files}，"
         f"匹配边沿 {len(matches)}，采样点不一致比例 "
         f"{safe_percent(mismatch_points, comparable_points):.2f}%"
     )
 
     if matches:
         near_example = min(matches, key=lambda item: abs(item.lag_s))
-        delayed_candidates = [item for item in matches if item.lag_s >= 0]
-        delayed_example = max(delayed_candidates or matches, key=lambda item: abs(item.lag_s))
+        delayed_example = max(matches, key=lambda item: abs(item.lag_s))
     else:
         near_example = None
         delayed_example = None
@@ -230,7 +248,7 @@ def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 1
         input_dir=input_dir,
         output_path=output_path,
         total_files=len(h5_files),
-        used_files=len(file_signals),
+        used_files=used_files,
         skipped_files=skipped_files,
         bus_edge_count=bus_edge_count,
         ethernet_edge_count=ethernet_edge_count,
@@ -243,6 +261,56 @@ def run_check(input_dir: Path, output_path: Path, edge_match_window_s: float = 1
         delayed_example=delayed_example,
         file_signals=file_signals,
     )
+
+
+def exceeds_delay_threshold(match: EdgeMatch) -> bool:
+    tolerance = max(
+        1e-9,
+        4 * np.finfo(float).eps * max(abs(match.bus_time), abs(match.ethernet_time)),
+    )
+    return bool(abs(match.lag_s) > 0.2 + tolerance)
+
+
+def write_mining_sync_report(h5_files: Sequence[Path], output_dir: Path) -> Dict[str, object]:
+    output_dir = Path(output_dir).resolve()
+    plot_path = output_dir / "lcc_activation_sync.png"
+    stats = run_check(
+        output_dir, plot_path, input_files=h5_files,
+        allow_no_samples=True, keep_examples_only=True,
+    )
+    max_abs_lag_s = max((abs(match.lag_s) for match in stats.matches), default=None)
+    exceeded_count = sum(exceeds_delay_threshold(match) for match in stats.matches)
+    if not stats.used_files:
+        detail = "无有效样本：全部文件缺少所需信号或时间戳"
+    elif not stats.matches:
+        detail = "无有效样本：未找到可匹配的开启/退出边沿"
+    else:
+        detail = (
+            f"有效匹配 {len(stats.matches)} 次，超过200 ms {exceeded_count} 次，"
+            f"最大绝对时间差 {max_abs_lag_s * 1000:.3f} ms"
+        )
+    detail += f"；文件 {stats.total_files}，有效 {stats.used_files}，跳过 {stats.skipped_files}"
+    draw_png(stats)
+    result: Dict[str, object] = {
+        "has_large_delay": exceeded_count > 0,
+        "matched_edges": len(stats.matches),
+        "threshold_ms": 200,
+        "exceeded_edges": exceeded_count,
+        "max_abs_lag_ms": max_abs_lag_s * 1000 if max_abs_lag_s is not None else None,
+        "detail": detail,
+        "plot_path": str(plot_path),
+        "matches": [
+            {"file_path": str(match.file_path), "state": match.state,
+             "bus_time": match.bus_time, "ethernet_time": match.ethernet_time,
+             "lag_ms": match.lag_s * 1000}
+            for match in stats.matches
+        ],
+    }
+    with (output_dir / "lcc_activation_sync.json").open("w", encoding="utf-8") as stream:
+        json.dump(result, stream, ensure_ascii=False, indent=2)
+    summary = {key: value for key, value in result.items() if key != "matches"}
+    print("LCC_SYNC_RESULT: " + json.dumps(summary, ensure_ascii=False), flush=True)
+    return result
 
 
 def collect_h5_files(input_dir: Path) -> List[Path]:
@@ -569,10 +637,10 @@ def draw_header(draw: ImageDraw.ImageDraw, stats: SyncStats, fonts: FontSet, pal
             f"可比较边沿：{len(stats.matches)}/{stats.bus_edge_count}；"
             f"中位延迟：{np.percentile(lags, 50):.2f}秒；"
             f"95分位延迟：{np.percentile(lags, 95):.2f}秒；"
-            f"1秒内同步：{int(np.sum(np.abs(lags) <= 1.0))}/{len(lags)}；"
+            f"绝对时间差>200 ms：{sum(exceeds_delay_threshold(match) for match in stats.matches)}/{len(lags)}；"
         )
     else:
-        edge_text = f"可比较边沿：0/{stats.bus_edge_count}；未发现激活/退出切换边沿；"
+        edge_text = f"延迟>200 ms：否（无有效样本）；可比较边沿：0/{stats.bus_edge_count}；"
     stats_text = (
         f"文件数：{stats.total_files}；有效文件：{stats.used_files}；"
         f"{edge_text}"
@@ -587,7 +655,7 @@ def draw_header(draw: ImageDraw.ImageDraw, stats: SyncStats, fonts: FontSet, pal
             f"95分位{np.percentile(start_diffs, 95) * 1000:.1f}毫秒。"
         )
         if len(lags):
-            start_text += "说明问题主要是标志位切换延迟，不是整体时间轴起点偏移。"
+            start_text += "状态切换时间差包含采样周期、处理及时间戳偏差，不等同于纯传输延迟。"
         else:
             start_text += "本批未发现激活/退出切换边沿，主要看采样点一致性和时间轴差异。"
         draw.text((72, 171), start_text, fill=palette.muted, font=fonts.subtitle)

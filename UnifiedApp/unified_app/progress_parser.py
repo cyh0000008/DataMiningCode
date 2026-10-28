@@ -26,6 +26,7 @@ mpi_cpi_compare.py 是一次性脚本，没有逐条进度，只能在进程退�
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -50,6 +51,10 @@ class ProgressUpdate:
     done_marker: bool = False
     error_marker: bool = False
     report_path: Optional[str] = None
+    sync_has_large_delay: Optional[bool] = None
+    sync_detail: Optional[str] = None
+    sync_plot_path: Optional[str] = None
+    sync_matched_edges: Optional[int] = None
 
 
 def parse_line(kind: str, line: str) -> ProgressUpdate:
@@ -73,6 +78,22 @@ def parse_line(kind: str, line: str) -> ProgressUpdate:
         update.percent = 100
 
     if kind == "j6b":
+        if line.startswith("LCC_SYNC_RESULT: "):
+            payload = json.loads(line[len("LCC_SYNC_RESULT: "):])
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(payload.get("has_large_delay"), bool)
+                or type(payload.get("matched_edges")) is not int
+                or payload["matched_edges"] < 0
+                or not isinstance(payload.get("detail"), str)
+                or not isinstance(payload.get("plot_path"), str)
+                or not payload["plot_path"]
+            ):
+                raise ValueError("Invalid LCC_SYNC_RESULT payload")
+            update.sync_has_large_delay = payload["has_large_delay"]
+            update.sync_matched_edges = payload["matched_edges"]
+            update.sync_detail = payload["detail"]
+            update.sync_plot_path = payload["plot_path"]
         report_match = _J6B_REPORT_PATH_RE.search(line)
         if report_match:
             update.report_path = report_match.group(1).strip()

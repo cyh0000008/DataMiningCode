@@ -5,11 +5,13 @@ from __future__ import annotations
 import time
 from typing import Dict
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
@@ -19,7 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..job_manager import STATUS_FAILED, STATUS_RUNNING, STATUS_SUCCESS, STATUS_CANCELED, JobManager
+from ..job_manager import STATUS_FAILED, STATUS_RUNNING, STATUS_SUCCESS, STATUS_CANCELED, TERMINAL_STATUSES, JobManager
+from ..job_spec import JOB_KIND_J6B
 from .log_dialog import LogDialog
 
 
@@ -30,7 +33,7 @@ STATUS_COLORS = {
     STATUS_CANCELED: "#e37400",
 }
 
-COL_NAME, COL_KIND, COL_STATUS, COL_PROGRESS, COL_ELAPSED, COL_ACTIONS = range(6)
+COL_NAME, COL_KIND, COL_STATUS, COL_PROGRESS, COL_ELAPSED, COL_SYNC, COL_SYNC_PLOT, COL_ACTIONS = range(8)
 
 
 class JobPanel(QWidget):
@@ -56,10 +59,14 @@ class JobPanel(QWidget):
         header.addWidget(self.running_label)
         layout.addLayout(header)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["任务名", "类型", "状态", "进度", "用时", "操作"])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels([
+            "任务名", "类型", "状态", "进度", "用时", "LCC延迟>200 ms", "同步结果图", "操作",
+        ])
         self.table.horizontalHeader().setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(COL_PROGRESS, QHeaderView.ResizeMode.Stretch)
+        for column in (COL_SYNC, COL_SYNC_PLOT, COL_ACTIONS):
+            self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -92,6 +99,10 @@ class JobPanel(QWidget):
         self.table.setCellWidget(row, COL_PROGRESS, progress)
 
         self.table.setItem(row, COL_ELAPSED, QTableWidgetItem("-"))
+        self.table.setItem(row, COL_SYNC, QTableWidgetItem("待检查" if job.kind == JOB_KIND_J6B else "-"))
+        plot_link = QLabel("-")
+        plot_link.linkActivated.connect(lambda _url, jid=job_id: self._open_sync_plot(jid))
+        self.table.setCellWidget(row, COL_SYNC_PLOT, plot_link)
 
         actions = QWidget()
         actions_layout = QHBoxLayout(actions)
@@ -129,7 +140,27 @@ class JobPanel(QWidget):
             elapsed = int(end_time - job.started_at)
             self.table.setItem(row, COL_ELAPSED, QTableWidgetItem(_format_elapsed(elapsed)))
 
+        if job.kind == JOB_KIND_J6B:
+            sync_item = QTableWidgetItem(
+                job.sync_status or ("未完成" if job.status in TERMINAL_STATUSES else "待检查")
+            )
+            sync_item.setToolTip(job.sync_detail or "匹配开启/退出边沿，任一绝对时间差>200 ms即为是。")
+            if job.sync_status == "是":
+                sync_item.setBackground(_hex_to_color("#d93025", light=True))
+            self.table.setItem(row, COL_SYNC, sync_item)
+            plot_link = self.table.cellWidget(row, COL_SYNC_PLOT)
+            plot_link.setText('<a href="sync-plot">打开结果图</a>' if job.sync_plot_path else "-")
+            plot_link.setToolTip(str(job.sync_plot_path) if job.sync_plot_path else job.sync_detail)
         self._refresh_running_label()
+
+    def _open_sync_plot(self, job_id: str) -> None:
+        job = self.job_manager.get_job(job_id)
+        if job is None or job.sync_plot_path is None:
+            return
+        if not job.sync_plot_path.is_file():
+            QMessageBox.warning(self, "无法打开结果图", f"文件不存在：{job.sync_plot_path}")
+        elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(job.sync_plot_path))):
+            QMessageBox.warning(self, "无法打开结果图", f"系统未能打开：{job.sync_plot_path}")
 
     def _on_job_log(self, job_id: str, line: str) -> None:
         dialog = self._log_dialogs.get(job_id)

@@ -143,6 +143,9 @@ def main(argv: List[str]) -> int:
         print("Bad case report written: %s" % bad_case_report_path)
     elif config.get("bad_case_signal_plots", False):
         print("Signal plots skipped: Bad Case extraction is disabled or its configuration is missing.")
+    from activation_sync_check import write_mining_sync_report
+    print("Checking LCC bus/Ethernet activation sync...", flush=True)
+    write_mining_sync_report([Path(path) for path in h5_files], actual_output_dir)
     return 0
 
 

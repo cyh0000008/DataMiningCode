@@ -64,6 +64,10 @@ class Job:
     pending_compare: Optional[Dict[str, Any]] = None
     report_archive: Optional[Dict[str, str]] = None
     archived_report_path: Optional[Path] = None
+    output_buffer: bytes = b""
+    sync_status: str = ""
+    sync_detail: str = ""
+    sync_plot_path: Optional[Path] = None
 
     @property
     def kind_label(self) -> str:
@@ -325,19 +329,40 @@ class JobManager(QObject):
         self.job_updated.emit(job.id)
         process.start()
 
-    def _on_output(self, job_id: str) -> None:
+    def _on_output(self, job_id: str, final: bool = False) -> None:
         job = self._jobs.get(job_id)
         if job is None or job.process is None:
             return
-        raw = bytes(job.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        if not raw:
-            return
-        for line in raw.splitlines():
-            line = line.rstrip()
+        raw = bytes(job.process.readAllStandardOutput())
+        lines = (job.output_buffer + raw).split(b"\n")
+        job.output_buffer = lines.pop()
+        if final and job.output_buffer:
+            lines.append(job.output_buffer)
+            job.output_buffer = b""
+        for raw_line in lines:
+            line = raw_line.decode("utf-8", errors="replace").rstrip()
             if not line:
                 continue
             job.log_lines.append(line)
-            update = parse_line(job.kind, line)
+            try:
+                update = parse_line(job.kind, line)
+            except (ValueError, TypeError) as exc:
+                job.sync_status = "检查失败"
+                job.sync_detail = f"LCC同步检查结果解析失败：{exc}"
+                job.sync_plot_path = None
+                job.log_lines.append(job.sync_detail)
+                self.job_log.emit(job_id, job.sync_detail)
+                continue
+            if update.sync_has_large_delay is not None:
+                job.sync_status = "是" if update.sync_has_large_delay else (
+                    "否" if update.sync_matched_edges else "否（无有效样本）"
+                )
+                job.sync_detail = update.sync_detail or ""
+                captured_plot = Path(update.sync_plot_path)
+                job.sync_plot_path = (
+                    captured_plot if captured_plot.is_absolute()
+                    else (job.cwd / captured_plot).resolve()
+                )
             if update.percent is not None:
                 job.percent = max(job.percent, update.percent)
             if update.current is not None and update.total is not None:
@@ -364,6 +389,7 @@ class JobManager(QObject):
         job = self._jobs.get(job_id)
         if job is None:
             return
+        self._on_output(job_id, final=True)
         self._running.pop(job_id, None)
         job.exit_code = exit_code
         job.finished_at = time.time()
@@ -374,6 +400,9 @@ class JobManager(QObject):
             job.percent = 100
         else:
             job.status = STATUS_FAILED
+        if job.kind == JOB_KIND_J6B and not job.sync_status:
+            job.sync_status = "未完成" if job.status != STATUS_SUCCESS else "未返回结果"
+            job.sync_detail = "LCC同步检查未完成或未返回结果，请查看任务日志。"
         self._cleanup_temp_files(job)
         if job.status == STATUS_SUCCESS and job.report_archive is not None:
             self._archive_report(job)
