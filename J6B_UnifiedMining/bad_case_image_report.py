@@ -21,7 +21,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 
 from DataMining import h5_files_are_continuous, load_config
-from metric_utils import JERK_SMOOTHING_WINDOW_S, jerk_from_acceleration, time_window_moving_average
+from metric_utils import JERK_SMOOTHING_WINDOW_S, effective_ttc, jerk_from_acceleration, time_window_moving_average
 from metric_display_names import metric_display_name
 from signal_preprocessor import SignalFrame, build_signal_frame, stitch_signal_frames
 
@@ -571,11 +571,15 @@ def build_evidence_panel(frame: SignalFrame, case: CaseRow, mask: np.ndarray) ->
         values = frame.col("acceleration_total").astype(float)
         if measure == "max_abs_acc":
             values = np.abs(values)
-    elif measure in {"min_ttc", "min_ttc_front_decel"}:
-        values = frame.col("front_ttc").astype(float)
+    elif measure in {"min_ttc", "min_ttc_front_decel", "ttc_at_ego_decel"}:
+        values = effective_ttc(frame)
         units = "s"
         if measure == "min_ttc_front_decel":
             window &= frame.col("front_accel").astype(float) < -0.5
+        elif measure == "ttc_at_ego_decel":
+            sample_time = float(data["value_time_s"])
+            window[:] = False
+            window[int(np.argmin(np.abs(t - sample_time)))] = True
     elif measure in {"min_front_distance", "stop_front_distance"}:
         values = frame.col("front_range").astype(float)
         units = "m"
@@ -673,11 +677,12 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
             [
                 ("前车距离", "front_range", 1.0, (15, 118, 110), False),
                 ("TTC", "front_ttc", 1.0, (245, 158, 11), False),
+                ("Cut-in TTC", "cutin_ttc_calc", 1.0, (220, 38, 38), False),
                 ("前车速度", "front_velocity_abs", 3.6, (124, 58, 237), True),
             ],
         )
         for line in front_lines:
-            unit = {"前车距离": "m", "TTC": "s", "前车速度": "km/h"}[line.label]
+            unit = {"前车距离": "m", "TTC": "s", "Cut-in TTC": "s", "前车速度": "km/h"}[line.label]
             panels.append(PlotPanel("前车：" + line.label, unit, [line]))
 
     if wants_torque_panel(metric_name):

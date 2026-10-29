@@ -132,6 +132,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "follow_stop": (
         "time_s", "front_ttc", "front_valid", "moving_flag", "acc_active_flag",
         "ego_speed_mps", "stationary_flag", "front_range", "front_velocity_abs",
+        "front_target_id", "cutin_valid", "cutin_ttc_calc",
     ),
     "follow_start": (
         "time_s", "stationary_flag", "ego_speed_mps", "front_velocity_abs", "front_valid", "acc_active_flag",
@@ -139,6 +140,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "stop2go": (
         "time_s", "stationary_flag", "moving_flag", "acc_active_flag", "front_ttc",
         "curv_enable_flag", "curv_speed_limit", "ego_speed_mps", "acceleration_total", "set_speed",
+        "cutin_ttc_calc",
     ),
     "slope_no_front": (
         "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "moving_flag",
@@ -146,7 +148,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
     "curvature": (
         "time_s", "curvature", "front_ttc", "acc_active_flag", "curv_enable_flag",
-        "moving_flag", "ego_speed_mps",
+        "moving_flag", "ego_speed_mps", "cutin_ttc_calc",
     ),
 }
 
@@ -162,12 +164,14 @@ MEASURE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "max_acc_time": ("time_s", "acceleration_total"),
     "start_time": ("time_s", "ego_speed_mps"),
     "accel_time_0p5_to_8": ("time_s", "ego_speed_mps"),
-    "min_ttc": ("time_s", "front_ttc"),
-    "min_ttc_front_decel": ("time_s", "front_ttc", "front_accel"),
+    "min_ttc": ("time_s", "front_ttc", "cutin_ttc_calc"),
+    "ttc_at_ego_decel": ("time_s", "front_ttc", "cutin_ttc_calc", "acceleration_total"),
+    "min_ttc_front_decel": ("time_s", "front_ttc", "cutin_ttc_calc", "front_accel"),
     "min_front_distance": ("time_s", "front_range"),
     "stop_front_distance": (
         "time_s", "front_range", "stationary_flag", "front_valid",
         "front_target_id", "front_velocity_abs", "acc_active_flag",
+        "cutin_valid",
     ),
     "speed_inflections": ("time_s", "ego_speed_mps"),
     "velocity_fluct": ("time_s", "ego_speed_mps"),
@@ -513,10 +517,28 @@ def filter_segments_for_primary(frame: SignalFrame, segments: List[Segment]) -> 
     return filtered
 
 
+def effective_ttc(frame: SignalFrame) -> np.ndarray:
+    front = frame.col("front_ttc", np.inf).astype(float)
+    cutin = frame.col("cutin_ttc_calc", np.inf).astype(float)
+    return np.minimum(
+        np.where(np.isfinite(front), front, np.inf),
+        np.where(np.isfinite(cutin), cutin, np.inf),
+    )
+
+
+def follow_target_valid(frame: SignalFrame) -> np.ndarray:
+    target_id = frame.col("front_target_id").astype(float)
+    return (
+        (frame.col("front_valid", 0).astype(bool) | frame.col("cutin_valid", 0).astype(bool))
+        & np.isfinite(target_id) & (target_id != 0)
+    )
+
+
 def follow_stop_segments(frame: SignalFrame) -> List[Segment]:
     min_duration_s = 5.0
-    ttc = frame.col("front_ttc", np.inf)
-    front_valid = frame.col("front_valid", 0).astype(bool)
+    ttc = effective_ttc(frame)
+    front_valid = follow_target_valid(frame)
+    target_id = frame.col("front_target_id").astype(float)
     moving = frame.col("moving_flag", 0).astype(bool)
     acc_active = frame.col("acc_active_flag", 0).astype(bool)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
@@ -527,7 +549,15 @@ def follow_stop_segments(frame: SignalFrame) -> List[Segment]:
     )
     target_present = np.logical_or(ttc < 30.0, frame.col("front_range", np.inf) < 80.0)
     follow_mask = np.logical_and.reduce([acc_active, front_valid, target_present])
-    candidates = mask_to_segments(frame.time_s, np.logical_and(follow_mask, moving))
+    candidates: List[Segment] = []
+    for candidate in mask_to_segments(frame.time_s, np.logical_and(follow_mask, moving)):
+        changes = np.flatnonzero(np.diff(target_id[candidate.start:candidate.end + 1]) != 0)
+        start = candidate.start
+        for offset in changes:
+            end = candidate.start + int(offset)
+            candidates.append(Segment(start, end))
+            start = end + 1
+        candidates.append(Segment(start, candidate.end))
     result: List[Segment] = []
     stationary = frame.col("stationary_flag", 0).astype(bool)
     for seg in candidates:
@@ -535,7 +565,10 @@ def follow_stop_segments(frame: SignalFrame) -> List[Segment]:
             continue
 
         episode_end = seg.end
-        while episode_end + 1 < frame.length and follow_mask[episode_end + 1]:
+        while (
+            episode_end + 1 < frame.length and follow_mask[episode_end + 1]
+            and target_id[episode_end + 1] == target_id[seg.start]
+        ):
             episode_end += 1
 
         stop_hits = np.where(
@@ -559,7 +592,7 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
     stationary = frame.col("stationary_flag", 0).astype(bool)
     moving = frame.col("moving_flag", 0).astype(bool)
     acc_active = frame.col("acc_active_flag", 0).astype(bool)
-    ttc = frame.col("front_ttc", np.inf)
+    ttc = effective_ttc(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     acceleration = frame.col("acceleration_total").astype(float)
     set_speed_kph = frame.col("set_speed").astype(float)
@@ -655,7 +688,7 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
 def curvature_segments(frame: SignalFrame) -> List[Segment]:
     min_speed_mps = 10.0 / KPH_PER_MPS
     curvature = frame.col("curvature", 0.0).astype(float)
-    ttc = frame.col("front_ttc", np.inf)
+    ttc = effective_ttc(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     mask = np.logical_and.reduce(
         [
@@ -835,10 +868,21 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
         end_idx = int(end_candidates[0])
         return float(t[end_idx] - t[start_idx]), float(t[end_idx]), extra
     if measure == "min_ttc":
-        return min_with_time(t, frame.col("front_ttc", np.inf)[seg.start : seg.end + 1], extra)
+        return min_with_time(t, effective_ttc(frame)[seg.start : seg.end + 1], extra)
+    if measure == "ttc_at_ego_decel":
+        acceleration = acceleration_window()
+        ttc = effective_ttc(frame)[seg.start : seg.end + 1]
+        valid = np.isfinite(acceleration) & (acceleration <= -0.5) & np.isfinite(ttc)
+        hits = np.flatnonzero(valid)
+        if not hits.size:
+            return None, None, extra
+        idx = int(hits[0])
+        extra["ego_decel_threshold_mps2"] = -0.5
+        extra["ego_acceleration_at_ttc_mps2"] = float(acceleration[idx])
+        return float(ttc[idx]), float(t[idx]), extra
     if measure == "min_ttc_front_decel":
         front_accel = frame.col("front_accel", 0.0).astype(float)[seg.start : seg.end + 1]
-        ttc = frame.col("front_ttc", np.inf)[seg.start : seg.end + 1].astype(float)
+        ttc = effective_ttc(frame)[seg.start : seg.end + 1]
         valid = front_accel < -0.5
         if not np.any(valid):
             return None, None, extra
@@ -871,7 +915,7 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
                 reason = "观察窗口自车重新移动"
             elif not np.all(frame.col("acc_active_flag")[window]):
                 reason = "观察窗口ACC退出"
-            elif not np.all(frame.col("front_valid")[window]) or not np.all(np.isfinite(targets)) or targets[0] == 0:
+            elif not np.all(follow_target_valid(frame)[window]):
                 reason = "观察窗口前车目标丢失或无效"
             elif not np.all(targets == targets[0]):
                 reason = "观察窗口前车目标切换"

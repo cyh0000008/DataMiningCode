@@ -28,6 +28,7 @@ fields = {
     "stationary_flag": t == 0, "moving_flag": t > 0,
     "acc_active_flag": np.ones(t.size, dtype=bool),
     "front_ttc": np.full(t.size, np.inf),
+    "cutin_ttc_calc": np.full(t.size, np.inf),
     "acceleration_total": np.full(t.size, 1.5),
     "set_speed": np.full(t.size, 50.),
     "curv_enable_flag": np.zeros(t.size, dtype=bool),

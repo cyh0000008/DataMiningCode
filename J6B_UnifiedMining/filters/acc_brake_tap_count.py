@@ -52,6 +52,10 @@ class AccBrakeTapCountMetric(BaseMetric):
     follow_speed_range_kph = 5.0
     follow_range_stable_span_m = 10.0
     follow_rel_speed_abs_max_mps = 1.5
+    follow_min_speed_kph = 30.0
+    follow_front_speed_span_mps = 4.0 / 3.6
+    follow_boundary_context_s = 1.0
+    follow_boundary_speed_span_mps = 0.5
     brake_prominence_min_nm = 180.0
     brake_threshold_min_nm = 40.0
     min_pulse_duration_s = 0.08
@@ -129,6 +133,7 @@ class AccBrakeTapCountMetric(BaseMetric):
 
         front_range = frame.col("front_range", np.inf).astype(float)
         front_velocity = frame.col("front_velocity_abs", np.nan).astype(float)
+        boundary_velocity = np.where(frame.col("front_valid", 0).astype(bool), front_velocity, np.nan)
         ego_speed_mps = frame.col("ego_speed_mps", np.nan).astype(float)
         follow_base = np.logical_and.reduce(
             (
@@ -137,7 +142,7 @@ class AccBrakeTapCountMetric(BaseMetric):
                 no_cutin,
                 frame.col("front_valid", 0).astype(bool),
                 np.isfinite(display_speed),
-                display_speed > self.min_speed_kph,
+                frame.col("ego_speed").astype(float) >= self.follow_min_speed_kph,
                 np.isfinite(front_range),
                 front_range >= self.follow_range_min_m,
                 front_range <= self.follow_range_max_m,
@@ -148,13 +153,38 @@ class AccBrakeTapCountMetric(BaseMetric):
         )
         for seg in stable_range_segments(
             t,
-            merge_short_gaps(t, follow_base, 0.50),
-            ((display_speed, self.follow_speed_range_kph), (front_range, self.follow_range_stable_span_m)),
+            follow_base,
+            (
+                (display_speed, self.follow_speed_range_kph),
+                (front_range, self.follow_range_stable_span_m),
+                (front_velocity, self.follow_front_speed_span_mps),
+            ),
             self.stable_duration_s,
         ):
-            segments.append(StableSceneSegment("stable_follow", seg))
+            if all(self._front_speed_stable_at_boundary(t, boundary_velocity, index)
+                   for index in (seg.start, seg.end)):
+                segments.append(StableSceneSegment("stable_follow", seg))
 
         return segments
+
+    def _front_speed_stable_at_boundary(
+        self, t: np.ndarray, front_velocity: np.ndarray, index: int,
+    ) -> bool:
+        start = t[index] - self.follow_boundary_context_s
+        end = t[index] + self.follow_boundary_context_s
+        if t[0] > start + 1e-9 or t[-1] < end - 1e-9:
+            return False
+        left = max(0, int(np.searchsorted(t, start + 1e-9, side="right")) - 1)
+        right = min(len(t) - 1, int(np.searchsorted(t, end - 1e-9, side="left")))
+        values = front_velocity[left:right + 1]
+        times = t[left:right + 1]
+        return bool(
+            values.size >= 2
+            and np.all(np.isfinite(values))
+            and np.all(np.isfinite(times))
+            and np.all(np.diff(times) > 0)
+            and np.ptp(values) <= self.follow_boundary_speed_span_mps + 1e-9
+        )
 
     def _brake_tap_events_in_segment(
         self,
@@ -313,7 +343,8 @@ def ranges_exceed_spans(
     maxs: List[float],
     series_and_spans: Tuple[Tuple[np.ndarray, float], ...],
 ) -> bool:
-    return any((maxs[index] - mins[index]) > span for index, (_series, span) in enumerate(series_and_spans))
+    return any((maxs[index] - mins[index]) > span + 1e-9
+               for index, (_series, span) in enumerate(series_and_spans))
 
 
 def positive_finite(values: np.ndarray) -> np.ndarray:

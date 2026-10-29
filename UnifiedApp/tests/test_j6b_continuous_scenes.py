@@ -25,6 +25,7 @@ fields = {
     "ego_speed_mps": np.full(t.size, 10.),
     "curv_enable_flag": np.ones(t.size, dtype=bool),
     "front_ttc": np.full(t.size, np.inf), "curvature": np.full(t.size, 0.005),
+    "cutin_ttc_calc": np.full(t.size, np.inf),
     "slope_acc": np.full(t.size, 0.2), "front_valid": np.zeros(t.size, dtype=bool),
     "curv_speed_limit": np.full(t.size, 20.), "set_speed": np.full(t.size, 36.),
 }

@@ -11,7 +11,7 @@ class FollowStopTtcMetric(BaseMetric):
     category = "CPI"
     required_fields = ("time_s", "acceleration_total")
     scene = "follow_stop"
-    measure = "min_ttc"
+    measure = "ttc_at_ego_decel"
     lower = 3.5
     upper = None
     severity_base = 2.0

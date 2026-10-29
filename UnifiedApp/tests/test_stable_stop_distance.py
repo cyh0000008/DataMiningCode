@@ -107,6 +107,7 @@ fields = {
     "acc_active_flag": np.ones(t.size, dtype=bool),
     "front_valid": np.ones(t.size, dtype=bool), "front_target_id": np.ones(t.size),
     "front_velocity_abs": np.zeros(t.size), "front_ttc": np.ones(t.size),
+    "cutin_valid": np.zeros(t.size), "cutin_ttc_calc": np.full(t.size, np.inf),
     "front_range": np.where(t < 7, 2.0, 3.5),
 }
 fields["front_range"][t == 7.5] = 15

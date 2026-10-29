@@ -380,7 +380,7 @@ def _default_stitched_values(field_name: str, primary_values: np.ndarray, length
     values = np.asarray(primary_values)
     if values.dtype.kind == "b":
         return np.zeros(length, dtype=bool)
-    if field_name in {"front_ttc", "front_range", "curv_speed_limit", "curvature_radius"}:
+    if field_name in {"front_ttc", "cutin_ttc_calc", "front_range", "curv_speed_limit", "curvature_radius"}:
         return np.full(length, np.inf, dtype=float)
     return np.full(length, np.nan, dtype=float)
 
