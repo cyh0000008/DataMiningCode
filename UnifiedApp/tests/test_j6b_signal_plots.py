@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory() as folder:
                      np.where((t >= 4) & (t < 6), -4.0, 0.0))
     data = {
         "acceleration": accel, "ego_speed": np.where(t < 10, 20.0, 0.0),
-        "acc_active": np.where(t < 11, 1, 0),
+        "acc_active": np.where(t < 11, 1, 0), "pedal_override": np.zeros(t.size),
         "abs_active": np.where((t >= 10.5) & (t < 11.5), 1, 0),
         "front_range": np.full(t.size, 10.0), "front_velocity_abs": np.zeros(t.size),
         "front_target_id": np.ones(t.size), "front_lat_range": np.zeros(t.size),

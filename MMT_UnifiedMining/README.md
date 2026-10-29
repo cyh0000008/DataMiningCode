@@ -13,6 +13,17 @@ All 12 driving-uninterfered-acceleration metrics are excluded from Bad Case
 extraction reports, regardless of extraction rules. Their calculations, CSV
 outputs, summary statistics and comparison reports remain unchanged.
 
+## Driver override truncates scenes
+
+All topic scene CPIs (curve, follow start, follow stop including its stable
+distance window, red light, stop-and-go, traffic-light stop-and-go and slope)
+use `longitudinal_preprocessor.is_acc_controlling`: `NP_State.f_Np_on` and no
+driver override (`throttle_override`, falling back to `throttle_pedal_percent > 0`).
+An override frame breaks the scene. The CAN MPIs `acc_rollback_count` and
+`acc_lost_arbitration` also exclude frames where
+`PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv == 1`. Case counts can
+be lower than in earlier versions.
+
 ## Curve and stop-and-go TTC gate
 
 Green-light start comfort jerk has no minimum: only maximum jerk >2.5 m/s3

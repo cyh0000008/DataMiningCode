@@ -12,14 +12,15 @@ class AccLostArbitrationMetric(BaseMetric):
     name = "acc_lost_arbitration"
     category = "MPI"
     result_mode = "event_count"
-    required_fields = ("acc_active_flag", "acc_request_state")
+    required_fields = ("acc_active_flag", "pedal_override_flag", "acc_request_state")
     min_bad_case_duration_s = 5.0
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
-        mask = np.logical_and(
+        mask = np.logical_and.reduce([
             frame.col("acc_active_flag").astype(bool),
+            np.logical_not(frame.col("pedal_override_flag").astype(bool)),
             enum_mask(frame.col("acc_request_state"), {2}),
-        )
+        ])
         events: List[MetricEvent] = []
         for seg in mask_to_segments(frame.time_s, mask):
             duration = seg.duration(frame.time_s)

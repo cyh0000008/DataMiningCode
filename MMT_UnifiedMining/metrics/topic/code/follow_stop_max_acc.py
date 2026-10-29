@@ -156,7 +156,7 @@ def _find_risk_segments(
 
         fusion_ttc = matched_fusion.get("min_ttc", None)
         f_potential_cipv_by_pos = matched_fusion.get("f_potential_cipv_by_pos", False)
-        f_np_on = unp_frame_data.get("NP_State", {}).get("f_Np_on", False)
+        f_np_on = lonprepro.is_acc_controlling(unp_para)
 
         is_non_straight_driving = _is_non_straight_driving_scene(unp_frame_data)
         is_set_speed_stable = _is_set_speed_stable(unp_para, prev_unp_para)

@@ -26,7 +26,7 @@ speed = np.minimum(t, 8)
 fields = {
     "time_s": t, "ego_speed_mps": speed,
     "stationary_flag": t == 0, "moving_flag": t > 0,
-    "acc_active_flag": np.ones(t.size, dtype=bool),
+    "acc_active_flag": np.ones(t.size, dtype=bool), "pedal_override_flag": np.zeros(t.size),
     "front_ttc": np.full(t.size, np.inf),
     "cutin_ttc_calc": np.full(t.size, np.inf),
     "acceleration_total": np.full(t.size, 1.5),

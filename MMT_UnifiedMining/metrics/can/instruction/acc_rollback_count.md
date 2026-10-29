@@ -32,6 +32,8 @@
   右后轮角速度。
 - `PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ITransEstGear_ECP_H1`
   档位估计，用于限制前进挡。
+- `PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv`
+  驾驶员油门 override 状态；override 期间不统计。
 
 这些信号需要在 `config.json` 的 `preprocess_signals` 中配置，代码里的 `REQUIRED_SIGNALS` 也以这些信号为准。
 
@@ -53,6 +55,7 @@
 - 四个轮速方向信号都等于 `Reverse`
 - `IVehSpdAvgNDrvn < 0.5 kph`
 - `IACCAct376 == true`
+- `IAccPdlOvrrdAtv != 1`（override 帧截断片段）
 - `IACCBSCE_AutBrkTp == hold`
 - 四个车轮角速度都不等于 `0`
 - `ITransEstGear_ECP_H1 == CVT Forward Gear`

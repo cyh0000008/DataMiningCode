@@ -130,24 +130,24 @@ class BaseMetric:
 
 SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "follow_stop": (
-        "time_s", "front_ttc", "front_valid", "moving_flag", "acc_active_flag",
+        "time_s", "front_ttc", "front_valid", "moving_flag", "acc_active_flag", "pedal_override_flag",
         "ego_speed_mps", "stationary_flag", "front_range", "front_velocity_abs",
         "front_target_id", "cutin_valid", "cutin_ttc_calc",
     ),
     "follow_start": (
-        "time_s", "stationary_flag", "ego_speed_mps", "front_velocity_abs", "front_valid", "acc_active_flag",
+        "time_s", "stationary_flag", "ego_speed_mps", "front_velocity_abs", "front_valid", "acc_active_flag", "pedal_override_flag",
     ),
     "stop2go": (
-        "time_s", "stationary_flag", "moving_flag", "acc_active_flag", "front_ttc",
+        "time_s", "stationary_flag", "moving_flag", "acc_active_flag", "pedal_override_flag", "front_ttc",
         "curv_enable_flag", "curv_speed_limit", "ego_speed_mps", "acceleration_total", "set_speed",
         "cutin_ttc_calc",
     ),
     "slope_no_front": (
-        "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "moving_flag",
+        "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "pedal_override_flag", "moving_flag",
         "slope_acc", "front_valid", "curv_speed_limit",
     ),
     "curvature": (
-        "time_s", "curvature", "front_ttc", "acc_active_flag", "curv_enable_flag",
+        "time_s", "curvature", "front_ttc", "acc_active_flag", "pedal_override_flag", "curv_enable_flag",
         "moving_flag", "ego_speed_mps", "cutin_ttc_calc",
     ),
 }
@@ -170,7 +170,7 @@ MEASURE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "min_front_distance": ("time_s", "front_range"),
     "stop_front_distance": (
         "time_s", "front_range", "stationary_flag", "front_valid",
-        "front_target_id", "front_velocity_abs", "acc_active_flag",
+        "front_target_id", "front_velocity_abs", "acc_active_flag", "pedal_override_flag",
         "cutin_valid",
     ),
     "speed_inflections": ("time_s", "ego_speed_mps"),
@@ -486,6 +486,14 @@ def _acc_activation_start_mask_uncached(frame: SignalFrame, window_s: float) -> 
     return mask
 
 
+def acc_control_active(frame: SignalFrame) -> np.ndarray:
+    """ACC active without driver pedal override; override frames truncate scenes."""
+    return np.logical_and(
+        frame.col("acc_active_flag", 0).astype(bool),
+        np.logical_not(frame.col("pedal_override_flag", 0).astype(bool)),
+    )
+
+
 def find_scene_segments(frame: SignalFrame, scene: str) -> List[Segment]:
     key = ("scene_segments", str(scene), frame.primary_length, frame.has_continuous_previous)
     return list(frame_cached(frame, key, lambda: _find_scene_segments_uncached(frame, scene)))
@@ -540,7 +548,7 @@ def follow_stop_segments(frame: SignalFrame) -> List[Segment]:
     front_valid = follow_target_valid(frame)
     target_id = frame.col("front_target_id").astype(float)
     moving = frame.col("moving_flag", 0).astype(bool)
-    acc_active = frame.col("acc_active_flag", 0).astype(bool)
+    acc_active = acc_control_active(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     front_velocity = frame.col("front_velocity_abs").astype(float)
     front_stopped = np.logical_and(
@@ -591,7 +599,7 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
     min_peak_speed_mps = 10.0 / KPH_PER_MPS
     stationary = frame.col("stationary_flag", 0).astype(bool)
     moving = frame.col("moving_flag", 0).astype(bool)
-    acc_active = frame.col("acc_active_flag", 0).astype(bool)
+    acc_active = acc_control_active(frame)
     ttc = effective_ttc(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     acceleration = frame.col("acceleration_total").astype(float)
@@ -606,6 +614,7 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
         np.isfinite(speed),
         speed <= set_speed_kph / KPH_PER_MPS,
         np.logical_not(np.isfinite(ttc) & (ttc < 4.5)),
+        np.logical_not(frame.col("pedal_override_flag", 0).astype(bool)),
     ])
     curv_limited = curvature_speed_limited_mask(frame, 20.0)
 
@@ -638,7 +647,7 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
     set_speed = frame.col("set_speed", np.inf).astype(float)
     mask = np.logical_and.reduce(
         [
-            frame.col("acc_active_flag", 0).astype(bool),
+            acc_control_active(frame),
             frame.col("moving_flag", 0).astype(bool),
             np.abs(frame.col("slope_acc", 0.0).astype(float)) >= 0.1,
             np.logical_not(frame.col("front_valid", 0).astype(bool)),
@@ -692,7 +701,7 @@ def curvature_segments(frame: SignalFrame) -> List[Segment]:
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     mask = np.logical_and.reduce(
         [
-            frame.col("acc_active_flag", 0).astype(bool),
+            acc_control_active(frame),
             frame.col("curv_enable_flag", 0).astype(bool),
             frame.col("moving_flag", 0).astype(bool),
             speed >= min_speed_mps,
@@ -716,7 +725,8 @@ def follow_start_segments(frame: SignalFrame) -> List[Segment]:
     ego_speed = frame.col("ego_speed_mps", 0.0).astype(float)
     front_vel = frame.col("front_velocity_abs", 0.0).astype(float)
     front_valid = frame.col("front_valid", 0).astype(bool)
-    acc_active = frame.col("acc_active_flag", 0).astype(bool)
+    acc_active = acc_control_active(frame)
+    pedal_override = frame.col("pedal_override_flag", 0).astype(bool)
     start_process_mask = np.logical_and.reduce([ego_stationary, acc_active, front_valid, np.isfinite(front_vel)])
     segments: List[Segment] = []
     for process_seg in mask_to_segments(frame.time_s, start_process_mask):
@@ -738,7 +748,11 @@ def follow_start_segments(frame: SignalFrame) -> List[Segment]:
             observation_end = min(frame.length - 1, max(idx, observation_end))
             ego_move_hits = np.where(ego_speed[idx : observation_end + 1] > 0.2)[0]
             end = idx + int(ego_move_hits[0]) if ego_move_hits.size else observation_end
-            segments.append(Segment(idx, end))
+            override_hits = np.flatnonzero(pedal_override[idx : end + 1])
+            if override_hits.size:
+                end = idx + int(override_hits[0]) - 1
+            if end >= idx:
+                segments.append(Segment(idx, end))
             start = idx + 1
     return merge_overlapping_segments(segments)
 
@@ -913,8 +927,8 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
                 reason = "观察窗口存在超过0.2秒采样缺口"
             elif not np.all(frame.col("stationary_flag")[window]):
                 reason = "观察窗口自车重新移动"
-            elif not np.all(frame.col("acc_active_flag")[window]):
-                reason = "观察窗口ACC退出"
+            elif not np.all(acc_control_active(frame)[window]):
+                reason = "观察窗口ACC退出或驾驶员override"
             elif not np.all(follow_target_valid(frame)[window]):
                 reason = "观察窗口前车目标丢失或无效"
             elif not np.all(targets == targets[0]):

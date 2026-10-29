@@ -14,7 +14,7 @@ class AccRollbackCountMetric(BaseMetric):
     result_mode = "event_count"
     required_fields = (
         "wheel_dir_lf", "wheel_dir_rf", "wheel_dir_lr", "wheel_dir_rr",
-        "ego_speed_non_driven", "acc_active_flag", "brake_request_type",
+        "ego_speed_non_driven", "acc_active_flag", "pedal_override_flag", "brake_request_type",
         "wheel_speed_lf", "wheel_speed_rf", "wheel_speed_lr", "wheel_speed_rr", "gear",
     )
     min_scene_duration_s = 0.20
@@ -32,6 +32,7 @@ class AccRollbackCountMetric(BaseMetric):
             reverse,
             wheel_valid,
             frame.col("acc_active_flag"),
+            np.logical_not(frame.col("pedal_override_flag").astype(bool)),
             enum_mask(frame.col("brake_request_type"), {5}),
             enum_mask(frame.col("gear"), {12}),
             frame.col("ego_speed_non_driven").astype(float) <= self.max_vehicle_speed_kph,

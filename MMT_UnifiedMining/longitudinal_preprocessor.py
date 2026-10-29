@@ -29,6 +29,28 @@ def is_non_straight_driving_scene(unp_frame_data: Dict) -> bool:
         return False
     return bool(non_straight_info.get("is_non_straight_scene", False))
 
+
+def is_driver_override(matched_chassis: Optional[Dict]) -> bool:
+    """Throttle override; falls back to pedal percent > 0 when the override field is absent."""
+    if not isinstance(matched_chassis, dict):
+        return False
+    throttle_override = matched_chassis.get("throttle_override")
+    if throttle_override is not None:
+        return bool(throttle_override)
+    pedal_percent = matched_chassis.get("throttle_pedal_percent")
+    try:
+        return pedal_percent is not None and float(pedal_percent) > 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def is_acc_controlling(comp_frame: Dict) -> bool:
+    """NP/ACC on without driver override; scenes are truncated on override frames."""
+    unp_frame_data = comp_frame.get("unp_frame_data") or {}
+    if not unp_frame_data.get("NP_State", {}).get("f_Np_on", False):
+        return False
+    return not is_driver_override(comp_frame.get("matched_chassis"))
+
 # ------------------------------ 获取bag_path下的直接子文件夹列表（仅一级） ------------------------------
 def get_immediate_subfolders(path):
     # 修复16：增加路径存在性检查，避免异常

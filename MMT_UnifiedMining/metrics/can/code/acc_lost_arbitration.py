@@ -10,19 +10,23 @@ from signal_lib import FolderSession, mask_to_segments
 METRIC_CATEGORY = "MPI"
 ACC_ACTIVE_SIGNAL = "PPEI_Adaptive_Cruise_Axl_Trq_Req_194_M.IACCATC_ACCAct"
 REQUEST_STATE_SIGNAL = "PPEI_Propulsion_General_Data_1_0C2_M.IACCATCS_RqStat"
+PEDAL_OVERRIDE_SIGNAL = "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
 
 DEFAULT_MIN_BAD_CASE_DURATION_SECONDS = 5.0
 ACC_ACTIVE_VALUES = {1}
 LOST_ARBITRATION_VALUES = {2}
+PEDAL_OVERRIDE_VALUES = {1}
 
 REQUIRED_SIGNALS = [
     ACC_ACTIVE_SIGNAL,
     REQUEST_STATE_SIGNAL,
+    PEDAL_OVERRIDE_SIGNAL,
 ]
 
 SIGNAL_KEYS = {
     "acc_active": REQUIRED_SIGNALS[0],
     "request_state": REQUIRED_SIGNALS[1],
+    "pedal_override": REQUIRED_SIGNALS[2],
 }
 
 
@@ -80,11 +84,15 @@ def analyze_acc_lost_arbitration(
     request_state = session.sample_signal_to_axis(
         SIGNAL_KEYS["request_state"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
+    pedal_override = session.sample_signal_to_axis(
+        SIGNAL_KEYS["pedal_override"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
+    )
 
     lost_arbitration_mask = [
         _matches_enum(acc_on, ACC_ACTIVE_VALUES, {"1", "true", "active"})
+        and not _matches_enum(override, PEDAL_OVERRIDE_VALUES, {"1", "true", "active"})
         and _matches_enum(state, LOST_ARBITRATION_VALUES, {"lost arbitration"})
-        for acc_on, state in zip(acc_active, request_state)
+        for acc_on, override, state in zip(acc_active, pedal_override, request_state)
     ]
 
     scenes = []

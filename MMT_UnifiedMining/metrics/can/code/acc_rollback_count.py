@@ -20,6 +20,7 @@ WHEEL_SPEED_RF_SIGNAL = "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRFrtAuth"
 WHEEL_SPEED_LR_SIGNAL = "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelLRrAuth"
 WHEEL_SPEED_RR_SIGNAL = "PPEI_Chassis_General_Data_1_031_M.IWhlAngVelRRrAuth"
 GEAR_SIGNAL = "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ITransEstGear_ECP_H1"
+PEDAL_OVERRIDE_SIGNAL = "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
 
 DEFAULT_MAX_VEHICLE_SPEED_KPH = 0.5
 DEFAULT_MIN_SCENE_DURATION_SECONDS = 0.20
@@ -29,6 +30,7 @@ REVERSE_DIRECTION_VALUES = {4}
 ACC_ACTIVE_VALUES = {1}
 HOLD_BRAKE_TYPE_VALUES = {5}
 FORWARD_GEAR_VALUES = {12}
+PEDAL_OVERRIDE_VALUES = {1}
 
 REQUIRED_SIGNALS = [
     WHEEL_DIR_LF_SIGNAL,
@@ -43,6 +45,7 @@ REQUIRED_SIGNALS = [
     WHEEL_SPEED_LR_SIGNAL,
     WHEEL_SPEED_RR_SIGNAL,
     GEAR_SIGNAL,
+    PEDAL_OVERRIDE_SIGNAL,
 ]
 
 SIGNAL_KEYS = {
@@ -58,6 +61,7 @@ SIGNAL_KEYS = {
     "wheel_speed_lr": REQUIRED_SIGNALS[9],
     "wheel_speed_rr": REQUIRED_SIGNALS[10],
     "gear": REQUIRED_SIGNALS[11],
+    "pedal_override": REQUIRED_SIGNALS[12],
 }
 
 
@@ -122,6 +126,7 @@ def analyze_acc_rollback_count(
     acc_active = session.sample_signal_to_axis(SIGNAL_KEYS["acc_active"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
     auto_brake_type = session.sample_signal_to_axis(SIGNAL_KEYS["auto_brake_type"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
     gear = session.sample_signal_to_axis(SIGNAL_KEYS["gear"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
+    pedal_override = session.sample_signal_to_axis(SIGNAL_KEYS["pedal_override"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
     wheel_speed_lf = [float(value) for value in wheel_speed_lf_raw]
     wheel_speed_rf = [float(value) for value in session.sample_signal_to_axis(SIGNAL_KEYS["wheel_speed_rf"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)]
     wheel_speed_lr = [float(value) for value in session.sample_signal_to_axis(SIGNAL_KEYS["wheel_speed_lr"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)]
@@ -135,7 +140,10 @@ def analyze_acc_rollback_count(
             and _matches_enum(wheel_dir_lr[index], REVERSE_DIRECTION_VALUES, {"reverse"})
             and _matches_enum(wheel_dir_rr[index], REVERSE_DIRECTION_VALUES, {"reverse"})
         )
-        is_acc_active = _matches_enum(acc_active[index], ACC_ACTIVE_VALUES, {"1", "true", "active"})
+        is_acc_active = (
+            _matches_enum(acc_active[index], ACC_ACTIVE_VALUES, {"1", "true", "active"})
+            and not _matches_enum(pedal_override[index], PEDAL_OVERRIDE_VALUES, {"1", "true", "active"})
+        )
         is_hold = _matches_enum(auto_brake_type[index], HOLD_BRAKE_TYPE_VALUES, {"hold"})
         is_forward_gear = _matches_enum(gear[index], FORWARD_GEAR_VALUES, {"cvt forward gear", "forward gear", "drive"})
         low_vehicle_speed = float(vehicle_speed[index]) < max_vehicle_speed_kph

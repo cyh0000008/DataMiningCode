@@ -191,7 +191,7 @@ def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
         # 提取核心参数
         velocity_value = matched_chassis.get("vehicle_speed_average", 0.0)
         f_stationary = matched_chassis.get("stationary", False)
-        f_np_on = unp_frame_data.get("NP_State", {}).get("f_Np_on", False)
+        f_np_on = lonprepro.is_acc_controlling(unp_para)
 
         is_non_straight_driving = _is_non_straight_driving_scene(unp_frame_data)
         is_set_speed_stable = _is_set_speed_stable(unp_para, prev_unp_para)

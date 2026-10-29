@@ -188,7 +188,7 @@ def _find_risk_segments(
 
         fusion_ttc = matched_fusion.get("min_ttc", None)
         f_potential_cipv_by_pos = matched_fusion.get("f_potential_cipv_by_pos", False)
-        f_np_on = unp_frame_data.get("NP_State", {}).get("f_Np_on", False)
+        f_np_on = lonprepro.is_acc_controlling(unp_para)
 
         is_non_straight_driving = _is_non_straight_driving_scene(unp_frame_data)
         is_set_speed_stable = _is_set_speed_stable(unp_para, prev_unp_para)
@@ -270,8 +270,8 @@ def _measure_stable_stop_distance(segment: List[Dict], frames: List[Dict], stop_
                 return exclude("观察窗口底盘或融合匹配数据缺失、过期")
         if not chassis.get("stationary", False):
             return exclude("观察窗口自车重新移动")
-        if not unp.get("NP_State", {}).get("f_Np_on", False):
-            return exclude("观察窗口NP退出")
+        if not lonprepro.is_acc_controlling(frame):
+            return exclude("观察窗口NP退出或驾驶员override")
         if fusion.get("closest_obj_id") is None or not fusion.get("has_valid_fusion_data", False):
             return exclude("观察窗口前车目标丢失或无效")
         if fusion["closest_obj_id"] != target_id:

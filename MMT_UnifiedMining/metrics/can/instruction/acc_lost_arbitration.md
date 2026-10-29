@@ -12,8 +12,10 @@
   ACC 请求 active 状态。
 - `PPEI_Propulsion_General_Data_1_0C2_M.IACCATCS_RqStat`
   ACC 请求状态，用于识别 `Lost Arbitration`。
+- `PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv`
+  驾驶员油门 override 状态；override 期间不统计。
 
-这些信号需要在 `config.json` 的 `preprocess_signals` 中配置，代码里的 `REQUIRED_SIGNALS` 也以这 2 个信号为准。
+这些信号需要在 `config.json` 的 `preprocess_signals` 中配置，代码里的 `REQUIRED_SIGNALS` 也以这 3 个信号为准。
 
 当前代码兼容文本枚举和值枚举。本批数据按以下数值识别：
 
@@ -22,13 +24,14 @@
 
 ## 3. 判定逻辑
 
-先取两个信号的公共时间段。
+先取全部信号的公共时间段。
 
-分析主时间轴使用 `IACCATC_ACCAct` 原始时间轴，`IACCATCS_RqStat` 按最近邻采样到该时间轴。
+分析主时间轴使用 `IACCATC_ACCAct` 原始时间轴，其他信号按最近邻采样到该时间轴。
 
 单点有效条件：
 
 - `IACCATC_ACCAct == 1`
+- `IAccPdlOvrrdAtv != 1`（override 帧截断片段）
 - `IACCATCS_RqStat == Lost Arbitration`
 
 连续满足条件的点合并为事件片段。片段持续时间必须满足：
