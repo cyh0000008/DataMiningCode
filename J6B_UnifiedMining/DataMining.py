@@ -4,6 +4,7 @@ import importlib.util
 import json
 import re
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
@@ -74,9 +75,32 @@ def main(argv: List[str]) -> int:
     continuous_next_flags = [False] * len(h5_files)
     stitch_max_gap_s = float(config.get("defaults", {}).get("h5_stitch_max_gap_s", 5.0))
 
-    def get_frame(index: int) -> SignalFrame:
+    failed_files: Dict[int, Dict[str, str]] = {}
+    read_retries = max(0, int(config.get("defaults", {}).get("h5_read_retries", 2)))
+    read_retry_delay_s = max(0.0, float(config.get("defaults", {}).get("h5_read_retry_delay_s", 2.0)))
+
+    def get_frame(index: int) -> Optional[SignalFrame]:
+        if index in failed_files:
+            return None
         if index not in frame_cache:
-            frame_cache[index] = build_signal_frame(h5_files[index], config)
+            for attempt in range(read_retries + 1):
+                try:
+                    frame_cache[index] = build_signal_frame(h5_files[index], config)
+                    break
+                except OSError as exc:
+                    if attempt < read_retries:
+                        print("  WARNING: H5 read failed, retrying (%d/%d): %s: %s" % (
+                            attempt + 1, read_retries, h5_files[index], exc), flush=True)
+                        time.sleep(read_retry_delay_s)
+                        continue
+                    failed_files[index] = {
+                        "file": str(h5_files[index]),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                    print("  WARNING: skipped unreadable H5 after %d attempt(s): %s: %s: %s" % (
+                        attempt + 1, h5_files[index], type(exc).__name__, exc), flush=True)
+                    return None
         return frame_cache[index]
 
     actual_output_dir = output_dir
@@ -86,6 +110,11 @@ def main(argv: List[str]) -> int:
             current_index = file_index - 1
             print("[%d/%d] preprocessing %s" % (file_index, len(h5_files), h5_file))
             frame = get_frame(current_index)
+            if frame is None:
+                if current_index > 0:
+                    continuous_next_flags[current_index - 1] = False
+                frame_cache.pop(current_index - 1, None)
+                continue
             has_continuous_previous = current_index > 0 and continuous_next_flags[current_index - 1]
             frame.has_continuous_previous = has_continuous_previous
 
@@ -97,9 +126,10 @@ def main(argv: List[str]) -> int:
                     frame,
                     stitch_max_gap_s,
                 )
+                next_frame = get_frame(current_index + 1) if is_continuous else None
+                is_continuous = is_continuous and next_frame is not None
                 continuous_next_flags[current_index] = is_continuous
                 if is_continuous:
-                    next_frame = get_frame(current_index + 1)
                     stitched_frame = stitch_signal_frames(
                         frame,
                         next_frame,
@@ -132,7 +162,16 @@ def main(argv: List[str]) -> int:
                 ))
             frame_cache.pop(current_index - 1, None)
         report_path = writer.close()
-    write_run_manifest(actual_output_dir, config_path, input_paths, date_range, metric_signal_scope, h5_files, metrics)
+    failed_file_records = [failed_files[index] for index in sorted(failed_files)]
+    write_run_manifest(
+        actual_output_dir, config_path, input_paths, date_range, metric_signal_scope, h5_files, metrics,
+        failed_file_records,
+    )
+    if failed_file_records:
+        print("WARNING: %d unreadable H5 file(s) were skipped; results are incomplete. See run_manifest.json." % (
+            len(failed_file_records)), flush=True)
+        for record in failed_file_records:
+            print("  skipped: %s (%s: %s)" % (record["file"], record["error_type"], record["error"]), flush=True)
     bad_case_config_path = resolve_path(config_path.parent, config.get("bad_case_extract_config", "bad_case_extract.json"))
     bad_case_report_path = write_bad_case_report(actual_output_dir, bad_case_config_path, metrics)
     print("Report written: %s" % report_path)
@@ -451,8 +490,10 @@ def write_run_manifest(
     metric_signal_scope: str,
     h5_files: List[str],
     metrics: List[BaseMetric],
+    failed_files: Optional[List[Dict[str, str]]] = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    failed_files = failed_files or []
     payload = {
         "config_path": str(config_path),
         "input_paths": [str(path) for path in input_paths],
@@ -460,6 +501,8 @@ def write_run_manifest(
         "powertrain_type": metrics[0].powertrain_type if metrics else None,
         "metric_signal_scope": metric_signal_scope,
         "h5_files": h5_files,
+        "failed_h5_files": failed_files,
+        "complete": not failed_files,
         "metrics": [{"name": metric.name, "category": metric.category} for metric in metrics],
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }

@@ -38,7 +38,8 @@ Windows 环境如果没有 `python3` 命令，用 `python DataMining.py` 等价�
 - 每个指标一个 `_events.json`
 - `skipped_metrics.csv` 记录因缺失信号而未运行的指标，包含指标名称、文件路径、缺失字段和缺失 H5 路径
 - 一个汇总 XLSX 报告，汇总页和明细页都会标注 `指标类型`：CPI 或 MPI
-- `run_manifest.json` 记录本次输入和指标列表
+- `run_manifest.json` 记录本次输入和指标列表；`failed_h5_files` 记录读取失败后跳过的 H5，`complete=false` 表示结果不完整
+- H5 打开失败时默认重试 2 次、间隔 2s（`defaults.h5_read_retries` / `defaults.h5_read_retry_delay_s`）；仍失败则跳过该文件，且不与前后文件拼接
 - `lcc_activation_sync.png` / `lcc_activation_sync.json`：启用 `lcc_sync_check`（默认 true）时生成 LCC 总线/ETH 同步诊断，
   使用本次挖掘经过路径及日期筛选的文件和两路原始报文时间戳。开启/退出任一匹配边沿的绝对时间差
   严格大于 200 ms 判为有较大延迟；等于 200 ms 不计超限。无有效样本时结果为“否”并明确注明原因，
