@@ -160,6 +160,8 @@ def _get_frame_risk_params(comp_frame: Dict) -> Dict:
         "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
         "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
         "closest_obj_x": closest_obj_x,
+        "closest_front_x": matched_fusion.get("closest_front_x") if matched_fusion else None,
+        "closest_front_ttc": matched_fusion.get("closest_front_ttc") if matched_fusion else None,
         "closest_obj_vel": closest_obj_vel,
         "closest_obj_acc": closest_obj_acc,
         "set_speed": set_speed,

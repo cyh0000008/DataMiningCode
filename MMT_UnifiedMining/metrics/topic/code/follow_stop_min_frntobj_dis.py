@@ -215,7 +215,7 @@ def _find_risk_segments(
                     current_segment.append(unp_para)
         else:
             if current_segment:
-                if len(current_segment) > C_min_risk_segment_length and f_stationary == True:
+                if len(current_segment) > C_min_risk_segment_length and f_stationary == True and f_np_on:
                     # 把首次 stationary 帧纳入场景，用于读取完成刹停后的前车距离。
                     current_segment.append(unp_para)
                     risk_segments.append(current_segment)

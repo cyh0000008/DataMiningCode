@@ -30,7 +30,9 @@ if profile == "J6B":
         "time_s": t, "ego_speed_mps": np.full(t.size, 10.),
         "set_speed": np.full(t.size, 36.), "acc_active_flag": np.ones(t.size, bool),
         "moving_flag": np.ones(t.size, bool), "slope_acc": np.full(t.size, .2),
-        "front_valid": np.zeros(t.size, bool), "curv_speed_limit": np.full(t.size, 30.),
+        "front_valid": np.zeros(t.size, bool), "front_range": np.full(t.size, np.inf),
+        "front_ttc": np.full(t.size, np.inf), "cutin_valid": np.zeros(t.size, bool),
+        "cutin_ttc_calc": np.full(t.size, np.inf), "curv_speed_limit": np.full(t.size, 30.),
         "acceleration_total": np.zeros(t.size),
     }
     original = SignalFrame("synthetic", "", {}, fields, {})
@@ -62,7 +64,11 @@ else:
         "matched_chassis": {"stationary": False, "vehicle_speed_average": 10.,
                             "accleration_on_wheel": 0., "timestamp_ms": float(ts * 1000)},
         "matched_msd_control": {"slope_acc": .2},
-        "matched_fusion": {"f_potential_cipv_by_pos": False},
+        "matched_fusion": {
+            "f_potential_cipv_by_pos": False,
+            "closest_front_x": None,
+            "closest_front_ttc": None,
+        },
         "matched_body": {"velocity_on_dashboard": 36.},
     } for ts in t]
     def select(data):
@@ -89,6 +95,36 @@ else:
         return data[:count]
 
 assert select(original) == [(10, 200)]
+if profile == "J6B":
+    data = deepcopy(original)
+    data.fields["front_valid"][:] = True
+    data.fields["front_range"][:] = 50.01
+    data.fields["front_ttc"][:] = 20.01
+    assert select(data) == [(10, 200)]
+    for distance, ttc in ((50.0, 21.0), (50.01, 20.0)):
+        data = deepcopy(original)
+        data.fields["front_valid"][:] = True
+        data.fields["front_range"][:] = distance
+        data.fields["front_ttc"][:] = ttc
+        assert select(data) == []
+    data = deepcopy(original)
+    data.fields["cutin_valid"][:] = True
+    data.fields["front_range"][:] = 50.1
+    data.fields["cutin_ttc_calc"][:] = 20.1
+    assert select(data) == [(10, 200)]
+    data.fields["cutin_ttc_calc"][:] = 20.0
+    assert select(data) == []
+else:
+    for distance, ttc, expected in (
+        (50.01, 20.01, [(10, 200)]),
+        (50.0, 21.0, []),
+        (50.01, 20.0, []),
+    ):
+        data = deepcopy(original)
+        for frame in data:
+            frame["matched_fusion"]["closest_front_x"] = distance
+            frame["matched_fusion"]["closest_front_ttc"] = ttc
+        assert select(data) == expected
 # Entry uses a full second and starts at confirmation, not the dwell start.
 for count, expected in ((60, []), (61, [(10, 60)])):
     assert select(truncate(deepcopy(original), count)) == expected

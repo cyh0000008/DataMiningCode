@@ -258,14 +258,14 @@ assert stats["All Case Count"] == 1 and not bad
 from unittest.mock import patch
 import longitudinal_preprocessor as module
 
-def obj(track_id, x, available=True):
+def obj(track_id, x, available=True, ttc=10, y=0.1):
     return f"""
 track_id: {track_id}
 available: {available}
-crash_risk_ttc: 10
+crash_risk_ttc: {ttc}
 relative_position:
   x: {x}
-  y: 0.1
+  y: {y}
 velocity_relative_to_ground:
   x: 0.0
 acceleration_relative_to_ground:
@@ -274,11 +274,20 @@ shape:
   length: 4.0
 extra_json: ""
 """
-text = "meta:\n sensor_timestamp_us: 1000000\nperception_fusion_objects_data:\n" + obj(10, 15) + obj(20, 9.3) + obj(30, 8, False)
+text = "meta:\n sensor_timestamp_us: 1000000\nperception_fusion_objects_data:\n" + obj(10, 15) + obj(20, 9.3) + obj(30, 8, False) + obj(40, 70, ttc=25) + obj(50, 49, ttc=18, y=1.4)
 with patch.object(module, "_split_timestamped_paragraphs", return_value=[("1", text)]):
     frames = module._parse_fusion_obj_auto(text)
 assert len(frames) == 1 and frames[0]["closest_obj_id"] == 20, frames
 assert frames[0]["closest_obj_x"] == 9.3 and frames[0]["closest_obj_len"] == 4
+assert frames[0]["closest_front_x"] == 9.3 and frames[0]["closest_front_ttc"] == 10
+cutin_text = "meta:\n sensor_timestamp_us: 1000000\nperception_fusion_objects_data:\n" + obj(60, 49, ttc=18, y=1.4) + obj(70, 70, ttc=25)
+with patch.object(module, "_split_timestamped_paragraphs", return_value=[("1", cutin_text)]):
+    cutin_frames = module._parse_fusion_obj_auto(cutin_text)
+assert cutin_frames[0]["closest_front_x"] == 49 and cutin_frames[0]["closest_front_ttc"] == 18
+far_text = "meta:\n sensor_timestamp_us: 1000000\nperception_fusion_objects_data:\n" + obj(50, 70, ttc=25)
+with patch.object(module, "_split_timestamped_paragraphs", return_value=[("1", far_text)]):
+    far_frames = module._parse_fusion_obj_auto(far_text)
+assert far_frames[0]["closest_front_x"] == 70 and far_frames[0]["closest_front_ttc"] == 25
 ''')
 
 

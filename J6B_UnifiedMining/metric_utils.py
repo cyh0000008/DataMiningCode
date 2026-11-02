@@ -144,7 +144,8 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
     "slope_no_front": (
         "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "pedal_override_flag", "moving_flag",
-        "slope_acc", "front_valid", "curv_speed_limit",
+        "slope_acc", "front_valid", "front_range", "front_ttc", "cutin_valid", "cutin_ttc_calc",
+        "curv_speed_limit",
     ),
     "curvature": (
         "time_s", "curvature", "front_ttc", "acc_active_flag", "pedal_override_flag", "curv_enable_flag",
@@ -281,8 +282,16 @@ def mask_to_segments(t: np.ndarray, mask: np.ndarray) -> List[Segment]:
     return segments
 
 
-def merge_short_gaps(t: np.ndarray, mask: np.ndarray, max_gap_s: float) -> np.ndarray:
-    merged = mask.astype(bool).copy()
+def merge_short_gaps(
+    t: np.ndarray, mask: np.ndarray, max_gap_s: float,
+    barrier_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    allowed = (
+        np.ones(mask.size, dtype=bool)
+        if barrier_mask is None
+        else barrier_mask.astype(bool)
+    )
+    merged = np.logical_and(mask.astype(bool), allowed)
     idx = 0
     while idx < merged.size:
         if merged[idx]:
@@ -294,7 +303,11 @@ def merge_short_gaps(t: np.ndarray, mask: np.ndarray, max_gap_s: float) -> np.nd
         gap_end = idx - 1
         left = gap_start - 1
         right = idx
-        if left >= 0 and right < merged.size and merged[left] and merged[right]:
+        if (
+            left >= 0 and right < merged.size
+            and merged[left] and merged[right]
+            and np.all(allowed[gap_start : gap_end + 1])
+        ):
             if t[right] - t[left] <= max_gap_s:
                 merged[gap_start : gap_end + 1] = True
     return merged
@@ -494,16 +507,38 @@ def acc_control_active(frame: SignalFrame) -> np.ndarray:
     )
 
 
-def find_scene_segments(frame: SignalFrame, scene: str) -> List[Segment]:
-    key = ("scene_segments", str(scene), frame.primary_length, frame.has_continuous_previous)
-    return list(frame_cached(frame, key, lambda: _find_scene_segments_uncached(frame, scene)))
+def find_scene_segments(
+    frame: SignalFrame, scene: str, minimum_observation_s: Optional[float] = None,
+    require_ego_start_before_override: bool = False,
+) -> List[Segment]:
+    key = (
+        "scene_segments", str(scene), frame.primary_length,
+        frame.has_continuous_previous, minimum_observation_s,
+        require_ego_start_before_override,
+    )
+    return list(
+        frame_cached(
+            frame, key,
+            lambda: _find_scene_segments_uncached(
+                frame, scene, minimum_observation_s, require_ego_start_before_override,
+            ),
+        )
+    )
 
 
-def _find_scene_segments_uncached(frame: SignalFrame, scene: str) -> List[Segment]:
+def _find_scene_segments_uncached(
+    frame: SignalFrame, scene: str, minimum_observation_s: Optional[float] = None,
+    require_ego_start_before_override: bool = False,
+) -> List[Segment]:
     if scene == "follow_stop":
         return filter_segments_for_primary(frame, follow_stop_segments(frame))
     if scene == "follow_start":
-        return filter_segments_for_primary(frame, follow_start_segments(frame))
+        return filter_segments_for_primary(
+            frame,
+            follow_start_segments(
+                frame, minimum_observation_s, require_ego_start_before_override,
+            ),
+        )
     if scene == "stop2go":
         return filter_segments_for_primary(frame, stop2go_segments(frame))
     if scene == "slope_no_front":
@@ -645,12 +680,30 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
     min_duration_s = 5.0
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     set_speed = frame.col("set_speed", np.inf).astype(float)
+    front_present = np.logical_or(
+        frame.col("front_valid", 0).astype(bool),
+        frame.col("cutin_valid", 0).astype(bool),
+    )
+    front_ttc = np.minimum(
+        frame.col("front_ttc", np.inf).astype(float),
+        frame.col("cutin_ttc_calc", np.inf).astype(float),
+    )
+    front_clear = np.logical_or(
+        np.logical_not(front_present),
+        np.logical_and(
+            np.logical_and(
+                np.isfinite(frame.col("front_range", np.inf).astype(float)),
+                frame.col("front_range", np.inf).astype(float) > 50.0,
+            ),
+            front_ttc > 20.0,
+        ),
+    )
     mask = np.logical_and.reduce(
         [
             acc_control_active(frame),
             frame.col("moving_flag", 0).astype(bool),
             np.abs(frame.col("slope_acc", 0.0).astype(float)) >= 0.1,
-            np.logical_not(frame.col("front_valid", 0).astype(bool)),
+            front_clear,
             frame.col("curv_speed_limit", 100.0).astype(float) >= speed,
             speed <= np.maximum(set_speed / 3.6, 0.0) + 3.0,
             np.isfinite(speed),
@@ -718,7 +771,10 @@ def curvature_segments(frame: SignalFrame) -> List[Segment]:
     return segments
 
 
-def follow_start_segments(frame: SignalFrame) -> List[Segment]:
+def follow_start_segments(
+    frame: SignalFrame, minimum_observation_s: Optional[float] = None,
+    require_ego_start_before_override: bool = False,
+) -> List[Segment]:
     observation_window_s = 8.0
     front_start_window_s = 1.0
     ego_stationary = frame.col("stationary_flag", 0).astype(bool)
@@ -750,7 +806,20 @@ def follow_start_segments(frame: SignalFrame) -> List[Segment]:
             end = idx + int(ego_move_hits[0]) if ego_move_hits.size else observation_end
             override_hits = np.flatnonzero(pedal_override[idx : end + 1])
             if override_hits.size:
-                end = idx + int(override_hits[0]) - 1
+                override_idx = idx + int(override_hits[0])
+                end = override_idx - 1
+                ego_started_before_override = np.any(ego_speed[idx:override_idx] > 0.2)
+                if require_ego_start_before_override and not ego_started_before_override:
+                    start = idx + 1
+                    continue
+                if (
+                    not ego_started_before_override
+                    and minimum_observation_s is not None
+                    and frame.time_s[override_idx] - frame.time_s[idx]
+                    < minimum_observation_s - 1e-9
+                ):
+                    start = idx + 1
+                    continue
             if end >= idx:
                 segments.append(Segment(idx, end))
             start = idx + 1
@@ -886,7 +955,7 @@ def measure_segment(frame: SignalFrame, seg: Segment, measure: str) -> Tuple[Opt
     if measure == "ttc_at_ego_decel":
         acceleration = acceleration_window()
         ttc = effective_ttc(frame)[seg.start : seg.end + 1]
-        valid = np.isfinite(acceleration) & (acceleration <= -0.5) & np.isfinite(ttc)
+        valid = np.isfinite(acceleration) & (acceleration <= -0.5)
         hits = np.flatnonzero(valid)
         if not hits.size:
             return None, None, extra

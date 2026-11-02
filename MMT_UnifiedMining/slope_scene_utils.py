@@ -23,6 +23,24 @@ def find_steady_slope_segments(
         timestamp = frame.get("unp_timestamp_ms")
         speed = params["velocity"]
         set_speed = frame.get("unp_frame_data", {}).get("Acc_info", {}).get("SetSpeed")
+        front_distance = params.get("closest_front_x")
+        front_ttc = params.get("closest_front_ttc")
+        has_front = (
+            isinstance(front_distance, (int, float))
+            and math.isfinite(front_distance)
+            and front_distance > 0.0
+        )
+        front_clear = (
+            not has_front
+            or (
+                isinstance(front_distance, (int, float))
+                and math.isfinite(front_distance)
+                and front_distance > 50.0
+                and isinstance(front_ttc, (int, float))
+                and math.isfinite(front_ttc)
+                and front_ttc > 20.0
+            )
+        )
         numeric = all(
             isinstance(value, (int, float)) and math.isfinite(value)
             for value in (timestamp, speed, set_speed, params["slope_acc"], params["curv_spd_limit"])
@@ -35,6 +53,7 @@ def find_steady_slope_segments(
             and params.get("is_non_straight_driving", False) is False
             and params["f_stationary"] is False
             and params["f_potential_cipv_by_pos"] is False
+            and front_clear
             and abs(params["slope_acc"]) >= 0.1
             and params["curv_spd_limit"] >= speed
             and not (params["f_redlight"] and params["f_stop_dis"] < 40)

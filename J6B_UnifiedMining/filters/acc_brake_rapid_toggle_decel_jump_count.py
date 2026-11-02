@@ -25,21 +25,35 @@ class AccBrakeRapidToggleDecelJumpCountMetric(BaseMetric):
         events: List[MetricEvent] = []
         index = 1
         while index < frame.length:
-            if not (valid[index] and int(state[index - 1]) == 2 and int(state[index]) == 1):
+            if not (
+                valid[index - 1] and valid[index]
+                and int(state[index - 1]) == 2 and int(state[index]) == 1
+            ):
                 index += 1
                 continue
             start = index
+            interrupted = False
             while index + 1 < frame.length and int(state[index + 1]) == 1:
                 index += 1
+                if not valid[index]:
+                    interrupted = True
             state1_end = index
             duration = t[state1_end] - t[start]
             return_index = state1_end + 1
-            if return_index >= frame.length or duration > self.mid_state_max_duration_s or int(state[return_index]) != 2:
+            if (
+                interrupted or return_index >= frame.length
+                or not valid[return_index]
+                or duration > self.mid_state_max_duration_s
+                or int(state[return_index]) != 2
+            ):
                 index += 1
                 continue
             end_time = t[return_index] + self.decel_window_s
             end = int(np.searchsorted(t, end_time, side="right") - 1)
             end = max(return_index, min(end, frame.length - 1))
+            if not np.all(valid[return_index : end + 1]):
+                index = end + 1
+                continue
             decel_range = float(np.nanmax(accel[start : end + 1]) - np.nanmin(accel[start : end + 1]))
             if decel_range > self.decel_range_threshold:
                 severity = round(decel_range - self.decel_range_threshold, 3)

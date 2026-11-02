@@ -67,18 +67,22 @@ with tempfile.TemporaryDirectory() as folder:
     draw_case_plot(bad, case, image_path)
     with Image.open(image_path) as image:
         image.verify()
-# Ignore non-finite acceleration/TTC, never use a later scene's samples.
+# Ignore non-finite acceleration, but select the first qualifying sample even
+# when its effective TTC is infinite; never use a later finite TTC instead.
 missing = frame([0, -np.inf, np.nan, -.5, -.8, -1, 0, -2],
                 [8, 7, 6, np.inf, np.nan, 3.6, 2, .5])
 value, when, _ = measure_segment(missing, Segment(0, 6), metric.measure)
-assert value == 3.6 and when == 5.
+assert np.isinf(value) and when == 3.
 no_decel = frame([0, -.49, -.49, -.49, -.49, -.49, 0, -2], [1]*8)
 value, when, _ = measure_segment(no_decel, Segment(0, 6), metric.measure)
 assert value is None and when is None
 result = metric.evaluate(no_decel)
 assert result.total_cases == 1 and result.bad_cases == 0
 all_invalid = frame([-1]*8, [np.nan, np.inf, np.nan, np.inf, np.nan, np.inf, np.nan, .1])
-assert measure_segment(all_invalid, Segment(0, 6), metric.measure)[0] is None
+value, when, _ = measure_segment(all_invalid, Segment(0, 6), metric.measure)
+assert np.isinf(value) and when == 0.
+result = metric.evaluate(all_invalid)
+assert result.total_cases == 1 and result.bad_cases == 0
 # Existing minimum-TTC measures used by other metrics keep their behavior.
 assert measure_segment(good, Segment(0, 6), "min_ttc")[0] == 1.
 '''],

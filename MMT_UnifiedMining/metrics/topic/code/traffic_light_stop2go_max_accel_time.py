@@ -290,6 +290,11 @@ def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
             velocity_history = [current_max_velocity]
             print(f"📌{base_time_ms:.0f}ms 触发绿灯起步，开启记录（初始车速：{current_max_velocity:.2f}m/s）")
         # 场景2：正在记录，持续缓存
+        elif is_recording and not f_np_on:
+            is_recording = False
+            current_segment = []
+            current_max_velocity = 0.0
+            velocity_history = []
         elif is_recording and is_set_speed_stable:
             if velocity_value is not None:
                 velocity_history.append(velocity_value)

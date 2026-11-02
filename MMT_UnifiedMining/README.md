@@ -22,7 +22,10 @@ driver override (`throttle_override`, falling back to `throttle_pedal_percent > 
 An override frame breaks the scene. The CAN MPIs `acc_rollback_count` and
 `acc_lost_arbitration` also exclude frames where
 `PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv == 1`. Case counts can
-be lower than in earlier versions.
+be lower than in earlier versions. A truncated prefix is retained only when it
+already meets the scene's existing completion and minimum-length criteria;
+override-frame speed or stationary state cannot complete follow-stop or
+stop-and-go scenes.
 
 ## Curve and stop-and-go TTC gate
 
@@ -39,12 +42,16 @@ remain unchanged. This does not change jerk or acceleration build-up thresholds.
 ## Confirmed steady slope scenes
 
 All three slope CPI metrics share `slope_scene_utils.find_steady_slope_segments`.
-Retain the normal NP/no-front/moving/slope/curvature-limit/red-light/data gates,
+Retain the normal NP/no-near-front/moving/slope/curvature-limit/red-light/data gates,
 but require a finite positive UNP SetSpeed constant within `1e-6` of the candidate's
 first value. Topic `cruise_velocity` and chassis `vehicle_speed_average` are m/s:
 speed must remain within SetSpeed +/- `2/3.6 m/s` for a full second to enter.
 The confirming sample starts the measured segment; the preceding dwell is excluded.
 Every measured segment must last at least 5 seconds (time-based, not frame-count-based).
+No near front object is allowed; if a forward object exists, its distance must be strictly
+greater than 50 m and its `crash_risk_ttc` strictly greater than 20 s. The nearest
+forward object within the lane corridor is used, including CIPV and cut-in targets once
+they enter that corridor; equality to either threshold fails.
 
 Once entered, speed outside the entry band is still included until an original
 base condition fails or SetSpeed changes. Then terminate immediately and require

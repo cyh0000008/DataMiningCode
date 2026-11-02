@@ -756,6 +756,8 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                     "f_potential_cipv_by_pos": False,
                     "f_potential_cipv_in_trafficlight": False,
                     "closest_obj_x": None,
+                    "closest_front_x": None,
+                    "closest_front_ttc": None,
                     "closest_obj_id": None,
                     "closest_obj_y": None,
                     "closest_obj_vel": None,
@@ -769,6 +771,7 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             object_pattern = r'(?s)track_id:\s*\d+[\s\S]*?extra_json:\s*".*?"'
             objects = re.findall(object_pattern, fusion_data)
             ttc_list = []
+            front_candidates = []
             f_potential_cipv_by_pos = False
             f_potential_cipv_in_trafficlight = False
             # 新增：存储满足位置条件的目标坐标 (x, y)
@@ -790,6 +793,16 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                 # 提取relative_position下的x,y值（兼容正负、整数/小数、多行/多空格）
                 pos_x_match = re.search(r'relative_position:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_y_match = re.search(r'relative_position:\s*[\s\S]*?y:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
+                if pos_x_match and pos_y_match:
+                    pos_x_value = float(pos_x_match.group(1))
+                    pos_y_value = float(pos_y_match.group(1))
+                    # Consider both the current in-path target and a cut-in once it
+                    # enters the forward lane corridor.
+                    if pos_x_value > 0.0 and -1.5 <= pos_y_value <= 1.5:
+                        front_candidates.append((
+                            pos_x_value,
+                            float(ttc_match.group(1)) if ttc_match else None,
+                        ))
                 pos_vel_match = re.search(r'velocity_relative_to_ground:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_acc_match = re.search(r'acceleration_relative_to_ground:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_len_match = re.search(r'shape:\s*[\s\S]*?length:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
@@ -813,6 +826,10 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
 
             # 新增：找到pos_x最小的目标坐标（最接近的obj）
             closest_obj_x = None
+            closest_front_x = None
+            closest_front_ttc = None
+            if front_candidates:
+                closest_front_x, closest_front_ttc = min(front_candidates, key=lambda item: item[0])
             closest_obj_id = None
             closest_obj_y = None
             closest_obj_vel = None
@@ -831,6 +848,8 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                 "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
                 "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
                 "closest_obj_x": closest_obj_x,
+                "closest_front_x": closest_front_x,
+                "closest_front_ttc": closest_front_ttc,
                 "closest_obj_id": closest_obj_id,
                 "closest_obj_y": closest_obj_y,
                 "closest_obj_vel": closest_obj_vel,

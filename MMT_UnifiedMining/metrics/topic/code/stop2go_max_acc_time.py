@@ -291,7 +291,7 @@ def _find_risk_segments(
             else:
                 # 不满足单帧条件 → 检查当前候选段落是否有效（条件9：长度达标）
                 write_debug_log(f"[DEBUG] 第 {idx} 帧 - 不满足条件 → 终止候选段落（当前长度：{len(current_candidate)}）")
-                if (len(current_candidate) >= C_min_segment_length) and (curr_params["velocity"] >= C_min_end_vel):
+                if (len(current_candidate) >= C_min_segment_length) and curr_params["f_np_on"] and (curr_params["velocity"] >= C_min_end_vel):
                     risk_segments.append(current_candidate.copy())
                     write_debug_log(f"[DEBUG] 候选段落长度≥{C_min_segment_length} → 加入静止起步段落列表")
                 else:
@@ -301,7 +301,7 @@ def _find_risk_segments(
 
         # -------------------- 遍历结束后：检查最后一个候选段落 --------------------
         write_debug_log(f"\n[DEBUG] 遍历结束 - 剩余候选段落长度：{len(current_candidate)}")
-        if (len(current_candidate) >= C_min_segment_length) and (curr_params["velocity"] >= C_min_end_vel):
+        if (len(current_candidate) >= C_min_segment_length) and curr_params["f_np_on"] and (curr_params["velocity"] >= C_min_end_vel):
             risk_segments.append(current_candidate.copy())
             write_debug_log(f"[DEBUG] 剩余候选段落长度达标 → 加入静止起步段落列表")
 

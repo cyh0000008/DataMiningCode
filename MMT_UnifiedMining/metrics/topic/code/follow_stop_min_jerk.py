@@ -174,7 +174,7 @@ def _find_risk_segments(
                     current_segment.append(unp_para)
         else:
             if current_segment:
-                if len(current_segment) > C_min_risk_segment_length and f_stationary == True:
+                if len(current_segment) > C_min_risk_segment_length and f_stationary == True and f_np_on:
                     risk_segments.append(current_segment)
                 current_segment = []
 

@@ -31,7 +31,10 @@ class AccHeavyBrakingCountMetric(BaseMetric):
             accel < self.heavy_brake_accel_threshold,
         ))
         events: List[MetricEvent] = []
-        for seg in mask_to_segments(frame.time_s, merge_short_gaps(frame.time_s, mask, self.merge_gap_s)):
+        for seg in mask_to_segments(
+            frame.time_s,
+            merge_short_gaps(frame.time_s, mask, self.merge_gap_s, barrier_mask=valid),
+        ):
             if seg.duration(frame.time_s) < self.min_brake_duration_s:
                 continue
 

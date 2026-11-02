@@ -18,7 +18,9 @@ class FollowStartJerkMetric(BaseMetric):
     bad_when_missing = False
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
-        segments = find_scene_segments(frame, self.scene)
+        segments = find_scene_segments(
+            frame, self.scene, require_ego_start_before_override=True,
+        )
         events: List[MetricEvent] = []
         measured = 0
         for seg in segments:
