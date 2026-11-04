@@ -108,7 +108,10 @@ panel = build_evidence_panel(follow, case, np.ones(n, dtype=bool))
 assert panel.lines[0].values[20] == 3.
 assert np.flatnonzero(panel.highlight).tolist() == [20]
 panels = build_panels(follow, metric.name, np.ones(n, dtype=bool))
-assert any(p.lines[0].label == "Cut-in TTC" and p.unit == "s" for p in panels)
+assert any(
+    line.label == "Cut-in TTC" and p.unit == "s"
+    for p in panels for line in p.lines
+)
 assert np.all(effective_ttc(follow) < np.inf)
 '''],
             cwd=Path(__file__).resolve().parents[2] / "J6B_UnifiedMining",

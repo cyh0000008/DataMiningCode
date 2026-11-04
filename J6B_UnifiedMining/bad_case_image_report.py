@@ -671,19 +671,42 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
         panels.append(PlotPanel("车速：" + line.label, "km/h", [line]))
 
     if wants_front_panel(metric_name):
-        front_lines = signal_lines(
-            frame,
-            mask,
-            [
+        for title, unit, specs in (
+            ("距离", "m", [
                 ("前车距离", "front_range", 1.0, (15, 118, 110), False),
-                ("TTC", "front_ttc", 1.0, (245, 158, 11), False),
+                ("Cut-in距离", "cutin_range_x", 1.0, (220, 38, 38), False),
+            ]),
+            ("TTC", "s", [
+                ("TTC", "front_ttc", 1.0, (15, 118, 110), False),
                 ("Cut-in TTC", "cutin_ttc_calc", 1.0, (220, 38, 38), False),
-                ("前车速度", "front_velocity_abs", 3.6, (124, 58, 237), True),
-            ],
-        )
-        for line in front_lines:
-            unit = {"前车距离": "m", "TTC": "s", "Cut-in TTC": "s", "前车速度": "km/h"}[line.label]
-            panels.append(PlotPanel("前车：" + line.label, unit, [line]))
+            ]),
+            ("速度", "km/h", [
+                ("前车速度", "front_velocity_abs", 3.6, (15, 118, 110), True),
+                ("Cut-in速度", "cutin_velocity_abs", 3.6, (220, 38, 38), True),
+            ]),
+            ("加速度", "m/s2", [
+                ("前车加速度", "front_accel", 1.0, (15, 118, 110), False),
+                ("Cut-in加速度", "cutin_accel_x", 1.0, (220, 38, 38), False),
+            ]),
+            ("目标ID", "enum", [
+                ("前车ID", "front_target_id", 1.0, (15, 118, 110), True),
+                ("Cut-in ID", "cutin_target_id", 1.0, (220, 38, 38), True),
+            ]),
+            ("有效状态", "enum", [
+                ("前车有效", "front_valid", 1.0, (15, 118, 110), True),
+                ("Cut-in有效", "cutin_valid", 1.0, (220, 38, 38), True),
+            ]),
+        ):
+            lines = signal_lines(frame, mask, specs)
+            visible = []
+            for line in lines:
+                validity = "cutin_valid" if line.label.startswith("Cut-in") else "front_valid"
+                if title != "有效状态" and frame.has(validity):
+                    line.values = np.where(frame.col(validity)[mask].astype(bool), line.values, np.nan)
+                if np.any(np.isfinite(line.values)):
+                    visible.append(line)
+            if visible:
+                panels.append(PlotPanel("前车 / Cut-in：" + title, unit, visible))
 
     if wants_torque_panel(metric_name):
         torque_lines = signal_lines(
@@ -720,10 +743,6 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
             ("ACC active", "acc_active_flag", 1.0, (22, 101, 52), True),
             ("override", "pedal_override_flag", 1.0, (220, 38, 38), True),
             ("brake type", "brake_request_type", 1.0, (37, 99, 235), True),
-            ("ABS", "abs_active", 1.0, (190, 24, 93), True),
-            ("TCS", "tcs_active", 1.0, (245, 158, 11), True),
-            ("VSE", "vse_active", 1.0, (124, 58, 237), True),
-            ("仲裁状态", "acc_request_state", 1.0, (20, 184, 166), True),
         ],
     )
     for line in state_lines:
@@ -758,7 +777,10 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
 
 def wants_front_panel(metric_name: str) -> bool:
     text = metric_name.lower()
-    tokens = ("follow", "front", "frnt", "ttc", "cutin", "brake_tap", "heavy_braking", "low_speed")
+    tokens = (
+        "follow", "front", "frnt", "ttc", "cutin", "brake_tap",
+        "heavy_braking", "low_speed", "curvature", "stop2go", "slope", "set_speed_reach",
+    )
     return any(token in text for token in tokens) or text in {"点刹", "重制动", "不合理低速"}
 
 

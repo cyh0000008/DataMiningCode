@@ -17,7 +17,7 @@ import tempfile
 import numpy as np
 from PIL import Image
 from signal_preprocessor import SignalFrame
-from bad_case_image_report import build_panels, draw_case_plot, CaseRow, format_tick, y_range
+from bad_case_image_report import build_panels, draw_case_plot, CaseRow, format_tick, y_range, wants_front_panel
 
 t = np.linspace(0, 10, 101)
 fields = {"time_s": t, "acceleration": np.sin(t)}
@@ -37,6 +37,13 @@ for name, value in {
 }.items():
     fields[name] = np.full(t.size, value)
 frame = SignalFrame("synthetic", "", {}, fields, {})
+frame.fields.update({
+    "front_valid": np.ones(t.size),
+    "cutin_valid": np.ones(t.size),
+    "cutin_range_x": np.full(t.size, 40.),
+    "cutin_velocity_abs": np.full(t.size, 3.),
+    "cutin_ttc_calc": np.full(t.size, 15.),
+})
 mask = np.ones(t.size, dtype=bool)
 name = "follow_slope_curv_torque_rollback"
 panels = build_panels(frame, name, mask)
@@ -44,6 +51,8 @@ assert len({panel.title for panel in panels}) == len(panels)
 for panel in panels:
     if panel.title == "纵向加速度":
         assert len(panel.lines) == 2 and panel.unit == "m/s2"
+    elif panel.title.startswith("前车 / Cut-in："):
+        assert 1 <= len(panel.lines) <= 2
     else:
         assert len(panel.lines) == 1, (panel.title, len(panel.lines))
 by_label = {line.label: panel for panel in panels for line in panel.lines}
@@ -51,7 +60,17 @@ for label, unit in (("前车距离", "m"), ("TTC", "s"), ("前车速度", "km/h"
                     ("坡度", "deg"), ("曲率", "1/m"), ("挡位", "enum"),
                     ("左前轮速", "raw"), ("非驱动轮车速", "km/h")):
     assert by_label[label].unit == unit, (label, by_label[label].unit)
-assert len([p for p in panels if p.title.startswith("状态：")]) == 7
+assert len([p for p in panels if p.title.startswith("状态：")]) == 3
+assert not {"ABS", "TCS", "VSE", "仲裁状态"} & by_label.keys()
+assert by_label["前车距离"] is by_label["Cut-in距离"]
+assert by_label["TTC"] is by_label["Cut-in TTC"]
+assert by_label["前车速度"] is by_label["Cut-in速度"]
+np.testing.assert_allclose(by_label["前车速度"].lines[1].values, 10.8)
+for metric in ("curvature_min_acc", "stop2go_start_time", "slope_no_frnt_acc",
+               "follow_start_latency", "acc_set_speed_reach", "acc_unreasonable_low_speed_count"):
+    assert wants_front_panel(metric), metric
+    assert any(p.title.startswith("前车 / Cut-in：") for p in build_panels(frame, metric, mask)), metric
+assert not wants_front_panel("acc_rollback_count")
 np.testing.assert_allclose(by_label["TTC"].lines[0].values, 200.)
 np.testing.assert_allclose(by_label["曲率"].lines[0].values, .004)
 np.testing.assert_allclose(by_label["弯道限速"].lines[0].values, 180.)
@@ -63,7 +82,16 @@ assert high - low < .001
 # Missing signals must not shift unit assignment to remaining front signals.
 del frame.fields["front_range"]
 remaining = build_panels(frame, "follow_stop_min_jerk", mask)
-assert next(p for p in remaining if p.title == "前车：TTC").unit == "s"
+assert next(p for p in remaining if p.title == "前车 / Cut-in：TTC").unit == "s"
+frame.fields["cutin_valid"][:50] = 0
+masked = build_panels(frame, "stop2go_max_acc", mask)
+distance = next(p for p in masked if p.title == "前车 / Cut-in：距离")
+assert np.all(np.isnan(distance.lines[0].values[:50]))
+frame.fields["cutin_valid"][:] = 0
+assert not any(
+    line.label == "Cut-in距离"
+    for p in build_panels(frame, "stop2go_max_acc", mask) for line in p.lines
+)
 with tempfile.TemporaryDirectory() as folder:
     path = Path(folder) / "separate_panels.png"
     case = CaseRow(2, name, "synthetic", 3., 6., 10., "")
