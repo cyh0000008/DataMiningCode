@@ -177,6 +177,7 @@ def _get_frame_risk_params(comp_frame: Dict) -> Dict:
         "velocity": velocity,
         "accel": acceleration,
         "fusion_ttc": fusion_ttc,
+        "front_clear": lonprepro.is_front_clear(matched_fusion or {}),
         "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
         "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
         "closest_obj_x": closest_obj_x,
@@ -198,7 +199,7 @@ def _find_risk_segments(
     查找满足"静止起步"条件的连续段落
     条件：
     1. f_np_on 一直为true
-    2. not (curr_params["fusion_ttc"] and curr_params["fusion_ttc"] < C_min_ttc)
+    2. 无前车，或前车距离>20m且TTC>8s
     3. not (curr_params["f_redlight"] is True and curr_params["f_stop_dis"] < C_min_stop_dis)
     4. f_curvature_control_on = false
     5. f_stationary = false
@@ -226,7 +227,6 @@ def _find_risk_segments(
     risk_segments = []
     current_candidate = []  # 存储当前连续满足条件的帧
     C_min_segment_length = 50  # 段落最小帧数（条件9），可根据需求调整
-    C_min_ttc = 4.5  # TTC阈值（条件2）
     C_min_stop_dis = 50.0  # 红灯停止距离阈值（条件3）
     C_min_end_vel = 8.0
 
@@ -249,7 +249,7 @@ def _find_risk_segments(
             # -------------------- 调试日志：当前帧核心参数 --------------------
             write_debug_log(f"\n[DEBUG] 处理第 {idx} 帧（UNP时间戳：{curr_comp_frame.get('unp_timestamp_ms', '未知')}）：")
             write_debug_log(f"  - 基础条件：f_np_on={curr_params['f_np_on']} | f_curvature_control_on={curr_params['f_curvature_control_on']}")
-            write_debug_log(f"  - TTC条件：fusion_ttc={curr_params['fusion_ttc']}（需≥{C_min_ttc}或无）")
+            write_debug_log(f"  - 前车条件（距离>20m且TTC>8s或无目标）：{curr_params['front_clear']}")
             write_debug_log(f"  - 红灯条件：f_redlight={curr_params['f_redlight']} | f_stop_dis={curr_params['f_stop_dis']}（需不同时满足红灯+距离<{C_min_stop_dis}）")
             write_debug_log(f"  - 静止条件：当前f_stationary={curr_params['f_stationary']} | 上一帧f_stationary={prev_params['f_stationary']}")
             write_debug_log(f"  - 加速条件：accel={curr_params['accel']}（需≥0） | velocity={curr_params['velocity']} ≤ set_speed={curr_params['set_speed']}")
@@ -261,7 +261,7 @@ def _find_risk_segments(
                 set_speed_stable and
                 curr_params["has_valid_data"] is True  # 确保数据有效，避免空值判断
                 and (curr_params["f_np_on"] is True and curr_params.get("is_non_straight_driving", False) is False)  # 条件1
-                and not (curr_params["fusion_ttc"] and curr_params["fusion_ttc"] < C_min_ttc)  # 条件2
+                and curr_params["front_clear"]
                 and not (curr_params["f_redlight"] is True and curr_params["f_stop_dis"] < C_min_stop_dis)  # 条件3
                 and curr_params["f_curvature_control_on"] is False  # 条件4
                 and curr_params["f_stationary"] is False  # 条件5
@@ -282,7 +282,8 @@ def _find_risk_segments(
             else:
                 # 不满足单帧条件 → 检查当前候选段落是否有效（条件9：长度达标）
                 write_debug_log(f"[DEBUG] 第 {idx} 帧 - 不满足条件 → 终止候选段落（当前长度：{len(current_candidate)}）")
-                if (len(current_candidate) >= C_min_segment_length) and curr_params["f_np_on"] and (curr_params["velocity"] >= C_min_end_vel):
+                end_velocity = curr_params["velocity"] if curr_params["front_clear"] else prev_params["velocity"]
+                if (len(current_candidate) >= C_min_segment_length) and curr_params["f_np_on"] and (end_velocity >= C_min_end_vel):
                     risk_segments.append(current_candidate.copy())
                     write_debug_log(f"[DEBUG] 候选段落长度≥{C_min_segment_length} → 加入静止起步段落列表")
                 else:

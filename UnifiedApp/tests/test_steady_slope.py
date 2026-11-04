@@ -116,14 +116,15 @@ if profile == "J6B":
     assert select(data) == []
 else:
     for distance, ttc, expected in (
-        (50.01, 20.01, [(10, 200)]),
-        (50.0, 21.0, []),
-        (50.01, 20.0, []),
+        (20.01, 8.01, [(10, 200)]),
+        (20.0, 9.0, []),
+        (21.0, 8.0, []),
     ):
         data = deepcopy(original)
         for frame in data:
             frame["matched_fusion"]["closest_front_x"] = distance
             frame["matched_fusion"]["closest_front_ttc"] = ttc
+            frame["matched_fusion"]["f_potential_cipv_by_pos"] = True
         assert select(data) == expected
 # Entry uses a full second and starts at confirmation, not the dwell start.
 for count, expected in ((60, []), (61, [(10, 60)])):

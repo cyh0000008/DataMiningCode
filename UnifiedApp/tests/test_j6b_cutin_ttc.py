@@ -33,18 +33,40 @@ fields = {
     "curv_speed_limit": np.full(n, np.inf),
 }
 frame = SignalFrame("synthetic", "", {}, fields, {})
-for value in (4.5, np.inf, np.nan):
-    changed = deepcopy(frame)
-    changed.fields["cutin_ttc_calc"][:] = value
-    assert len(curvature_segments(changed)) == 1
-changed = deepcopy(frame)
-changed.fields["cutin_ttc_calc"][80] = 4.49
+clear_frame = deepcopy(frame)
+clear_frame.fields["front_range"][:] = 40.
+clear_frame.fields["front_ttc"][:] = 30.
+for target in ("front", "cutin"):
+    for distance, ttc, expected in (
+        (30., 21., False), (30.01, 20., False), (30.01, 20.01, True),
+        (40., 19., False), (29., 30., False), (40., np.nan, False),
+        (40., np.inf, True), (np.nan, 30., False),
+    ):
+        changed = deepcopy(clear_frame)
+        changed.fields["front_valid"][:] = target == "front"
+        changed.fields["cutin_valid"][:] = target == "cutin"
+        changed.fields["front_range"][:] = distance
+        changed.fields["front_ttc" if target == "front" else "cutin_ttc_calc"][:] = ttc
+        assert bool(curvature_segments(changed)) == expected, (target, distance, ttc)
+        changed.fields["curv_enable_flag"][:] = 0
+        changed.fields["ego_speed_mps"] = np.minimum(t, 8.)
+        changed.fields["stationary_flag"] = t == 0
+        changed.fields["moving_flag"] = t > 0
+        assert bool(stop2go_segments(changed)) == expected, (target, distance, ttc)
+changed = deepcopy(clear_frame)
+changed.fields["front_valid"][:] = 0
+changed.fields["front_range"][:] = 0
+changed.fields["front_ttc"][:] = np.nan
+assert len(curvature_segments(changed)) == 1  # No target remains eligible.
+changed = deepcopy(clear_frame)
+changed.fields["cutin_valid"][80] = 1
+changed.fields["cutin_ttc_calc"][80] = 20.
 assert [(s.start, s.end) for s in curvature_segments(changed)] == [(0, 79), (81, 160)]
 changed.fields["front_ttc"][40] = 4.49
 assert all(not (s.start <= 40 <= s.end or s.start <= 80 <= s.end)
            for s in curvature_segments(changed))
 
-launch = deepcopy(frame)
+launch = deepcopy(clear_frame)
 launch.fields["curv_enable_flag"][:] = 0
 launch.fields["ego_speed_mps"] = np.minimum(t, 8.)
 launch.fields["stationary_flag"] = t == 0
@@ -52,7 +74,8 @@ launch.fields["moving_flag"] = t > 0
 assert stop2go_segments(launch)[0].end == 80
 for index, expected in ((1, []), (40, []), (65, [(1, 64)])):
     changed = deepcopy(launch)
-    changed.fields["cutin_ttc_calc"][index] = 4.49
+    changed.fields["cutin_valid"][index] = 1
+    changed.fields["cutin_ttc_calc"][index] = 20.
     assert [(s.start, s.end) for s in stop2go_segments(changed)] == expected
 
 follow = deepcopy(frame)
@@ -99,7 +122,9 @@ for name in ("follow_stop_ttc", "follow_stop_min_ttc_frntobj_dec",
     assert metric.evaluate(changed).total_cases == 1, name
 for name in ("curvature_min_speed", "curvature_min_acc", "curvature_min_jerk",
              "stop2go_max_acc", "stop2go_max_jerk", "stop2go_start_time", "stop2go_max_acc_time"):
-    assert "cutin_ttc_calc" in metric_required_fields(import_module("filters." + name).create_metric())
+    assert {"cutin_ttc_calc", "front_valid", "cutin_valid", "front_range"} <= set(
+        metric_required_fields(import_module("filters." + name).create_metric())
+    )
 assert "flt1_cutin_flag" in raw_dependencies_for_field("cutin_ttc_calc")
 metric = import_module("filters.follow_stop_ttc").create_metric()
 event = metric.evaluate(follow).events[0]

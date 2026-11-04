@@ -270,7 +270,7 @@ def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
         is_set_speed_stable = _is_set_speed_stable(unp_para, prev_unp_para)
         f_redlight = unp_frame_data.get("TrafficLight", {}).get("f_RedLightOn", False)
         f_stop_dis = unp_frame_data.get("TrafficLight", {}).get("stop_distance", 1000.0)
-        f_potential_cipv_in_trafficlight = matched_fusion.get("f_potential_cipv_in_trafficlight", False)
+        front_clear = lonprepro.is_front_clear(matched_fusion)
 
         # 判定绿灯起步触发条件
         is_traffic_light_stop2go = (
@@ -279,7 +279,7 @@ def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
             (f_np_on is True and not is_non_straight_driving and is_set_speed_stable) and
             f_stationary is True and
             f_stop_dis_prev < 5.0 and
-            not f_potential_cipv_in_trafficlight
+            front_clear
         )
 
         # 场景1：触发绿灯起步，开始记录
@@ -290,7 +290,7 @@ def _find_risk_segments(comprehensive_frames: List[Dict]) -> List[List[Dict]]:
             velocity_history = [current_max_velocity]
             print(f"📌{base_time_ms:.0f}ms 触发绿灯起步，开启记录（初始车速：{current_max_velocity:.2f}m/s）")
         # 场景2：正在记录，持续缓存
-        elif is_recording and not f_np_on:
+        elif is_recording and (not f_np_on or not front_clear):
             is_recording = False
             current_segment = []
             current_max_velocity = 0.0

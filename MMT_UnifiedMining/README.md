@@ -33,11 +33,23 @@ Green-light start comfort jerk has no minimum: only maximum jerk >2.5 m/s3
 is a Bad Case. Values <=2.5 m/s3 have zero severity; scene selection and
 jerk calculation are unchanged.
 
-The three curve-control CPI metrics and four stop-and-go CPI metrics use a
-4.5 s TTC scene-selection threshold on every frame (previously 3.5 s).
-An available positive TTC below 4.5 s breaks the candidate segment; equality
-is allowed. Existing missing/zero-TTC handling and all other scene conditions
-remain unchanged. This does not change jerk or acceleration build-up thresholds.
+The three curve-control, four stop-and-go, two red-light stop, five green-light
+start and three slope CPI metrics share the forward-target gate: no target is
+allowed; otherwise the nearest in-lane target must have distance >20 m and
+`crash_risk_ttc` >8 s. Equality fails, as do missing/NaN TTC for an existing target.
+Green-light starts check this both at trigger and throughout recording; a
+violation discards an unfinished recording without restarting it mid-drive.
+Completed scenes remain eligible. Red-light recovery searches cannot bridge
+a failed target gate. Truncated scenes still require their original completion
+and minimum-length conditions. Measurement thresholds and J6B remain unchanged.
+
+CAN set-speed reach uses this same >20 m / >8 s gate throughout its minimum
+8-second scene. It matches Fusion frames to CAN timestamps within 300 ms,
+including concatenated context folders. Missing/unmatched Fusion is not treated
+as an empty road; missing data is reported explicitly when no matching data exists.
+All these gates consider only available targets ahead (`x > 0`) within the lateral
+corridor `-1.5 <= y <= 1.5 m`, including cut-ins after they enter it. Adjacent-lane
+targets outside this corridor do not block the scene.
 
 ## Confirmed steady slope scenes
 
@@ -49,7 +61,7 @@ speed must remain within SetSpeed +/- `2/3.6 m/s` for a full second to enter.
 The confirming sample starts the measured segment; the preceding dwell is excluded.
 Every measured segment must last at least 5 seconds (time-based, not frame-count-based).
 No near front object is allowed; if a forward object exists, its distance must be strictly
-greater than 50 m and its `crash_risk_ttc` strictly greater than 20 s. The nearest
+greater than 20 m and its `crash_risk_ttc` strictly greater than 8 s. The nearest
 forward object within the lane corridor is used, including CIPV and cut-in targets once
 they enter that corridor; equality to either threshold fails.
 

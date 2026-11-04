@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from signal_lib import FolderSession, mask_to_segments
+from longitudinal_preprocessor import is_front_clear
+from metrics.can.code.acc_unreasonable_low_speed_count import (
+    _find_topic_file, _nearest_frame, _normalize_source_folders, _parse_fusion_object_file,
+)
 
 
 METRIC_CATEGORY = "MPI"
@@ -52,7 +56,11 @@ def __run_haoran_data_run__(folder_context: dict[str, Any]) -> tuple[bool, list[
         result_lines.insert(0, f"【运算总耗时】: {time.time() - start_time:.4f} 秒")
         return False, result_lines, stats
 
-    result = analyze_acc_set_speed_reach(session)
+    result = analyze_acc_set_speed_reach(
+        session, folder_path=folder_context.get("context_folder_paths") or [folder_context.get("folder_path")],
+    )
+    if result.get("skip_reason"):
+        result_lines.append("设速到达未统计：" + str(result["skip_reason"]))
     all_case_count = int(result["all_case_count"])
     bad_case_count = int(result["bad_case_count"])
     severity_score = float(result["severity_score"])
@@ -84,9 +92,24 @@ def analyze_acc_set_speed_reach(
     min_scene_duration_seconds: float = DEFAULT_MIN_SCENE_DURATION_SECONDS,
     stable_range_kph: float = DEFAULT_STABLE_RANGE_KPH,
     reach_margin_kph: float = DEFAULT_REACH_MARGIN_KPH,
+    folder_path: str | Path | list[str | Path] | None = None,
 ) -> dict[str, object]:
     session = session_or_h5_path if isinstance(session_or_h5_path, FolderSession) else FolderSession(session_or_h5_path)
     start_timestamp, end_timestamp = session.common_time_range(REQUIRED_SIGNALS)
+    fusion_frames = []
+    for folder in _normalize_source_folders(folder_path, Path(session.primary_h5_file).parent):
+        fusion_file = _find_topic_file(
+            folder, ["_perception_fusion_object_auto.txt", "_perception_fusion_object.txt"],
+            ["perception_fusion_object"],
+        )
+        if fusion_file is not None:
+            fusion_frames.extend(_parse_fusion_object_file(fusion_file))
+    fusion_frames.sort(key=lambda frame: float(frame["timestamp_ms"]))
+    if not fusion_frames:
+        result = _empty_result(start_timestamp, end_timestamp)
+        result["skip_reason"] = "missing fusion object file or no parseable fusion frames"
+        return result
+    fusion_times = [float(frame["timestamp_ms"]) for frame in fusion_frames]
 
     axis, speed_raw = session.get_signal_slice(SIGNAL_KEYS["speed"], start_timestamp, end_timestamp)
     if len(axis) < 2:
@@ -99,10 +122,23 @@ def analyze_acc_set_speed_reach(
     acc_active = session.sample_signal_to_axis(SIGNAL_KEYS["acc_active"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
     pedal_override = session.sample_signal_to_axis(SIGNAL_KEYS["pedal_override"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp)
 
-    base_mask = [
-        _as_bool(acc_on) and (not _as_bool(override)) and float(selected_speed_raw) > 0.0
-        for acc_on, override, selected_speed_raw in zip(acc_active, pedal_override, set_speed_raw)
-    ]
+    base_mask = []
+    matched_count = 0
+    for timestamp, acc_on, override, selected_speed_raw in zip(axis, acc_active, pedal_override, set_speed_raw):
+        fusion, _gap = _nearest_frame(fusion_frames, fusion_times, float(timestamp) * 1000.0, 300.0)
+        if fusion is not None:
+            matched_count += 1
+        front_clear = fusion is not None and is_front_clear({
+            "closest_front_x": fusion["in_lane_front_x"],
+            "closest_front_ttc": fusion["in_lane_front_ttc"],
+        })
+        base_mask.append(
+            _as_bool(acc_on) and not _as_bool(override) and float(selected_speed_raw) > 0.0 and front_clear
+        )
+    if not matched_count:
+        result = _empty_result(start_timestamp, end_timestamp)
+        result["skip_reason"] = "no fusion frames within 300 ms of CAN samples"
+        return result
     near_mask = [
         is_base and abs(disp_speed - selected_speed) <= target_band_kph
         for is_base, disp_speed, selected_speed in zip(base_mask, display_speed, set_speed)

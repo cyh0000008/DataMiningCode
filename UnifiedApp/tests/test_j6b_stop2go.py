@@ -28,6 +28,9 @@ fields = {
     "stationary_flag": t == 0, "moving_flag": t > 0,
     "acc_active_flag": np.ones(t.size, dtype=bool), "pedal_override_flag": np.zeros(t.size),
     "front_ttc": np.full(t.size, np.inf),
+    "front_valid": np.ones(t.size, dtype=bool),
+    "cutin_valid": np.zeros(t.size, dtype=bool),
+    "front_range": np.full(t.size, 40.),
     "cutin_ttc_calc": np.full(t.size, np.inf),
     "acceleration_total": np.full(t.size, 1.5),
     "set_speed": np.full(t.size, 50.),
@@ -49,10 +52,10 @@ for field, value in (
     changed.fields[field][65] = value
     segments = stop2go_segments(changed)
     assert [(seg.start, seg.end) for seg in segments] == [(1, 64)], (field, value, segments)
-# Inclusive thresholds and preserved unavailable-TTC behavior.
+# Valid acceleration boundary and strictly clear front TTC.
 for field, value in (
-    ("acceleration_total", 0.), ("front_ttc", 4.5),
-    ("front_ttc", np.inf), ("front_ttc", np.nan),
+    ("acceleration_total", 0.), ("front_ttc", 20.01),
+    ("front_ttc", np.inf),
 ):
     changed = deepcopy(frame)
     changed.fields[field][:] = value

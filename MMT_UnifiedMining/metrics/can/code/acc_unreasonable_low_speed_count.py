@@ -747,6 +747,7 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
         has_close_front_target = False
         closest_front_x: float | None = None
         closest_front_ttc: float | None = None
+        forward_candidates: list[tuple[float, float | None]] = []
 
         for object_text in re.split(r"\n\s*-\s*", fusion_data):
             if "track_id:" not in object_text or not re.search(r"available:\s*True", object_text, re.IGNORECASE):
@@ -759,6 +760,8 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
                 continue
 
             ttc = _parse_float_value(_extract_proto_scalar_value(object_text, "crash_risk_ttc"), default=None)
+            if pos_x > 0.0:
+                forward_candidates.append((pos_x, ttc))
             close_front = 0.0 < pos_x < FRONT_TARGET_CLOSE_DISTANCE_METERS
             ttc_front = (
                 ttc is not None
@@ -772,6 +775,7 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
                 if ttc is not None:
                     closest_front_ttc = ttc if closest_front_ttc is None else min(closest_front_ttc, ttc)
 
+        nearest_forward = min(forward_candidates, key=lambda item: item[0]) if forward_candidates else (None, None)
         frames.append(
             {
                 "timestamp_ms": timestamp_ms,
@@ -779,6 +783,8 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
                 "has_close_front_target": has_close_front_target,
                 "closest_front_x": closest_front_x,
                 "closest_front_ttc": closest_front_ttc,
+                "in_lane_front_x": nearest_forward[0],
+                "in_lane_front_ttc": nearest_forward[1],
             }
         )
 

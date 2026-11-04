@@ -5,6 +5,7 @@ import traceback
 import json
 import time
 import sys
+import math
 from typing import List, Dict, Optional, Tuple, Any, Union
 
 
@@ -50,6 +51,22 @@ def is_acc_controlling(comp_frame: Dict) -> bool:
     if not unp_frame_data.get("NP_State", {}).get("f_Np_on", False):
         return False
     return not is_driver_override(comp_frame.get("matched_chassis"))
+
+
+def is_front_clear(fusion: Dict) -> bool:
+    """Allow no forward target, or a target beyond 20 m with TTC above 8 s."""
+    distance = fusion.get("closest_front_x")
+    if distance is None:
+        return not (
+            fusion.get("f_potential_cipv_by_pos", False)
+            or fusion.get("f_potential_cipv_in_trafficlight", False)
+        )
+    ttc = fusion.get("closest_front_ttc")
+    return bool(
+        isinstance(distance, (int, float)) and math.isfinite(distance)
+        and distance > 20.0
+        and isinstance(ttc, (int, float)) and ttc > 8.0
+    )
 
 # ------------------------------ 获取bag_path下的直接子文件夹列表（仅一级） ------------------------------
 def get_immediate_subfolders(path):

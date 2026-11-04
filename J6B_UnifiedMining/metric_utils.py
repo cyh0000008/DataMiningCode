@@ -140,7 +140,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     "stop2go": (
         "time_s", "stationary_flag", "moving_flag", "acc_active_flag", "pedal_override_flag", "front_ttc",
         "curv_enable_flag", "curv_speed_limit", "ego_speed_mps", "acceleration_total", "set_speed",
-        "cutin_ttc_calc",
+        "cutin_ttc_calc", "front_valid", "cutin_valid", "front_range",
     ),
     "slope_no_front": (
         "time_s", "ego_speed_mps", "set_speed", "acc_active_flag", "pedal_override_flag", "moving_flag",
@@ -149,7 +149,7 @@ SCENE_REQUIRED_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
     "curvature": (
         "time_s", "curvature", "front_ttc", "acc_active_flag", "pedal_override_flag", "curv_enable_flag",
-        "moving_flag", "ego_speed_mps", "cutin_ttc_calc",
+        "moving_flag", "ego_speed_mps", "cutin_ttc_calc", "front_valid", "cutin_valid", "front_range",
     ),
 }
 
@@ -629,13 +629,26 @@ def follow_stop_segments(frame: SignalFrame) -> List[Segment]:
     return merge_overlapping_segments(result)
 
 
+def distant_front_clear_mask(frame: SignalFrame) -> np.ndarray:
+    distance = frame.col("front_range", np.inf).astype(float)
+    distance_clear = np.isfinite(distance) & (distance > 30.0)
+    clear = np.ones(frame.length, dtype=bool)
+    # J6B ordinary front and cut-in share the FLT1 range signal.
+    for valid_field, ttc_field in (
+        ("front_valid", "front_ttc"), ("cutin_valid", "cutin_ttc_calc"),
+    ):
+        present = frame.col(valid_field, 0).astype(bool)
+        ttc = frame.col(ttc_field, np.inf).astype(float)
+        clear &= ~present | (distance_clear & (ttc > 20.0))
+    return clear
+
+
 def stop2go_segments(frame: SignalFrame) -> List[Segment]:
     min_duration_s = 5.0
     min_peak_speed_mps = 10.0 / KPH_PER_MPS
     stationary = frame.col("stationary_flag", 0).astype(bool)
     moving = frame.col("moving_flag", 0).astype(bool)
     acc_active = acc_control_active(frame)
-    ttc = effective_ttc(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     acceleration = frame.col("acceleration_total").astype(float)
     set_speed_kph = frame.col("set_speed").astype(float)
@@ -648,7 +661,7 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
         set_speed_stable,
         np.isfinite(speed),
         speed <= set_speed_kph / KPH_PER_MPS,
-        np.logical_not(np.isfinite(ttc) & (ttc < 4.5)),
+        distant_front_clear_mask(frame),
         np.logical_not(frame.col("pedal_override_flag", 0).astype(bool)),
     ])
     curv_limited = curvature_speed_limited_mask(frame, 20.0)
@@ -750,7 +763,6 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
 def curvature_segments(frame: SignalFrame) -> List[Segment]:
     min_speed_mps = 10.0 / KPH_PER_MPS
     curvature = frame.col("curvature", 0.0).astype(float)
-    ttc = effective_ttc(frame)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     mask = np.logical_and.reduce(
         [
@@ -758,7 +770,7 @@ def curvature_segments(frame: SignalFrame) -> List[Segment]:
             frame.col("curv_enable_flag", 0).astype(bool),
             frame.col("moving_flag", 0).astype(bool),
             speed >= min_speed_mps,
-            np.logical_not(np.logical_and(np.isfinite(ttc), ttc < 4.5)),
+            distant_front_clear_mask(frame),
         ]
     )
     segments = []

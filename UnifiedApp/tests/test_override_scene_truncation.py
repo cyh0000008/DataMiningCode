@@ -44,11 +44,14 @@ fields = {
 }
 frame = SignalFrame("synthetic", "", {}, fields, {})
 
-changed = deepcopy(frame)
+clear_frame = deepcopy(frame)
+clear_frame.fields["front_range"][:] = 40.
+clear_frame.fields["front_ttc"][:] = 30.
+changed = deepcopy(clear_frame)
 changed.fields["pedal_override_flag"][80] = 1
 assert [(s.start, s.end) for s in curvature_segments(changed)] == [(0, 79), (81, 160)]
 
-launch = deepcopy(frame)
+launch = deepcopy(clear_frame)
 launch.fields["curv_enable_flag"][:] = 0
 launch.fields["ego_speed_mps"] = np.minimum(t, 8.)
 launch.fields["stationary_flag"] = t == 0
@@ -351,6 +354,7 @@ def stop2go_frames(override_terminal):
         terminal = i == 52
         data.append({"index": i, "params": {
             "f_redlight": False, "f_stop_dis": 999., "f_np_on": not (terminal and override_terminal),
+            "front_clear": True,
             "is_non_straight_driving": False, "f_stationary": terminal,
             "velocity": 8. if terminal else 5., "accel": 0., "fusion_ttc": None,
             "f_potential_cipv_in_trafficlight": False, "f_potential_cipv_by_pos": False,

@@ -150,6 +150,7 @@ def _get_frame_risk_params(comp_para: Dict) -> Dict:
         "f_stationary": f_stationary,
         "velocity": velocity,
         "fusion_ttc": fusion_ttc,
+        "front_clear": lonprepro.is_front_clear(matched_fusion or {}),
         "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
         "has_valid_data": bool(matched_fusion and unp_frame_data)
     }
@@ -168,7 +169,6 @@ def _find_risk_segments(
     current_segment = []
     # 配置参数
     C_min_risk_segment_length = 5  # 有效风险段最小帧数
-    C_min_risk_ttc = 2             # 最小风险TTC阈值
     C_min_start_vel = 2
     C_search_frames = 20           # 向后搜索帧数
     total_frames = len(comprehensive_frames)
@@ -189,8 +189,7 @@ def _find_risk_segments(
             continue
         
         # 判定核心风险条件
-        is_no_cipv = ((params["fusion_ttc"] is None or params["fusion_ttc"] >= C_min_risk_ttc) and
-                      not params["f_potential_cipv_in_trafficlight"])
+        is_no_cipv = params["front_clear"]
         # 核心风险条件：红灯+近距离+NP开启+非静止+无前车
         core_risk_cond = (set_speed_stable and is_no_cipv and params["f_redlight"] and params["f_np_on"] and
                           not params["f_stationary"] and params["f_stop_dis"] < 150)
@@ -216,8 +215,7 @@ def _find_risk_segments(
                 for j in range(i, search_end):
                     search_params = _get_frame_risk_params(comprehensive_frames[j])
                     # 检查搜索帧是否满足核心风险条件
-                    search_is_no_cipv = ((search_params["fusion_ttc"] is None or search_params["fusion_ttc"] >= C_min_risk_ttc) and
-                                         not search_params["f_potential_cipv_in_trafficlight"])
+                    search_is_no_cipv = search_params["front_clear"]
                     search_core_cond_hold = (search_is_no_cipv and search_params["f_np_on"] and
                                               _is_set_speed_stable(comprehensive_frames[j], comprehensive_frames[j - 1] if j > 0 else None) and
                                               not search_params["f_stationary"])

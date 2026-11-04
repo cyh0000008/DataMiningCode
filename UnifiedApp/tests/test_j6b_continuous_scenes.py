@@ -26,6 +26,8 @@ fields = {
     "curv_enable_flag": np.ones(t.size, dtype=bool),
     "front_ttc": np.full(t.size, np.inf), "curvature": np.full(t.size, 0.005),
     "cutin_ttc_calc": np.full(t.size, np.inf),
+    "cutin_valid": np.zeros(t.size, dtype=bool),
+    "front_range": np.full(t.size, 40.),
     "slope_acc": np.full(t.size, 0.2), "front_valid": np.zeros(t.size, dtype=bool),
     "curv_speed_limit": np.full(t.size, 20.), "set_speed": np.full(t.size, 36.),
 }
@@ -46,6 +48,10 @@ for function, changes in (
         for count in (1, 2, 4):
             changed = deepcopy(frame)
             changed.fields[field][70:70 + count] = value
+            if field == "front_ttc":
+                changed.fields["front_valid"][70:70 + count] = True
+            if function is slope_no_front_segments and field == "front_valid":
+                changed.fields["front_range"][70:70 + count] = 30.
             segments = function(changed)
             assert [(s.start, s.end) for s in segments] == [
                 (entry_offset, 69), (70 + count + entry_offset, 140)
@@ -58,12 +64,14 @@ for function, changes in (
     assert function(short) == []
 
 # Minimum lengths and curvature frame count retain their original boundaries.
-for value in (4.5, 5.0, np.inf, np.nan):
+for value in (20.01, 30., np.inf):
     changed = deepcopy(frame)
+    changed.fields["front_valid"][:] = True
     changed.fields["front_ttc"][:] = value
     assert [(s.start, s.end) for s in curvature_segments(changed)] == [(0, 140)]
-for value in (3.5, 4.0, 4.49):
+for value in (3.5, 20., np.nan):
     changed = deepcopy(frame)
+    changed.fields["front_valid"][:] = True
     changed.fields["front_ttc"][:] = value
     assert not curvature_segments(changed)
 for count, expected in ((49, False), (50, True)):
