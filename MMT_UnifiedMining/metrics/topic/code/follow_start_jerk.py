@@ -82,6 +82,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         result_values = _calc_segment_max_jerk(segment)
         if result_values:
@@ -89,9 +90,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values))
                 check_result = True
-                jerk_values.append(f"[Acc Dangerous! time:{result_values['max_jerk_time']} , jerk:{result_values['max_jerk']:.6f}, end_vel: {result_values['end_vel']:.6f}]")
+                jerk_values.append(f"[Acc Dangerous! time:{result_values['max_jerk_time']} , jerk:{result_values['max_jerk']:.6f}, end_vel: {result_values['end_vel']:.6f}, target_id:{target_id}]")
             else:
-                jerk_values.append(f"[time:{result_values['max_jerk_time']} , jerk:{result_values['max_jerk']:.6f}, end_vel: {result_values['end_vel']:.6f}]")
+                jerk_values.append(f"[time:{result_values['max_jerk_time']} , jerk:{result_values['max_jerk']:.6f}, end_vel: {result_values['end_vel']:.6f}, target_id:{target_id}]")
         else:
             jerk_values.append(f"当前段落算不出jerk")
 
@@ -282,6 +283,9 @@ def _find_risk_segments(
             debug_file.write(content + '\n')  # 每行末尾加换行符
 
     # ====================== 原有参数配置 ======================
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []  # 存储当前候选段落的unp_para
     prev_params = None    # 存储上一帧的风险参数（用于判断起点）

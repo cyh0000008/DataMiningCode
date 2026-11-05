@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from signal_lib import FolderSession, mask_to_segments
-from longitudinal_preprocessor import is_front_clear
+from longitudinal_preprocessor import is_front_clear, with_leadone_candidate
 from metrics.can.code.acc_unreasonable_low_speed_count import (
     _find_topic_file, _nearest_frame, _normalize_source_folders, _parse_fusion_object_file,
+    _parse_unp_planning_file,
 )
 
 
@@ -97,7 +98,11 @@ def analyze_acc_set_speed_reach(
     session = session_or_h5_path if isinstance(session_or_h5_path, FolderSession) else FolderSession(session_or_h5_path)
     start_timestamp, end_timestamp = session.common_time_range(REQUIRED_SIGNALS)
     fusion_frames = []
+    unp_frames = []
     for folder in _normalize_source_folders(folder_path, Path(session.primary_h5_file).parent):
+        unp_file = _find_topic_file(folder, ["_unp_planning_info.txt"], ["unp_planning_info"])
+        if unp_file is not None:
+            unp_frames.extend(_parse_unp_planning_file(unp_file))
         fusion_file = _find_topic_file(
             folder, ["_perception_fusion_object_auto.txt", "_perception_fusion_object.txt"],
             ["perception_fusion_object"],
@@ -110,6 +115,10 @@ def analyze_acc_set_speed_reach(
         result["skip_reason"] = "missing fusion object file or no parseable fusion frames"
         return result
     fusion_times = [float(frame["timestamp_ms"]) for frame in fusion_frames]
+    unp_frames.sort(key=lambda frame: float(frame["timestamp_ms"]))
+    unp_times = [float(frame["timestamp_ms"]) for frame in unp_frames]
+    if not unp_frames:
+        print("警告：设速到达缺少UNP规划数据，仅使用原位置前车候选")
 
     axis, speed_raw = session.get_signal_slice(SIGNAL_KEYS["speed"], start_timestamp, end_timestamp)
     if len(axis) < 2:
@@ -124,17 +133,29 @@ def analyze_acc_set_speed_reach(
 
     base_mask = []
     matched_count = 0
+    missing_unp_count = 0
     for timestamp, acc_on, override, selected_speed_raw in zip(axis, acc_active, pedal_override, set_speed_raw):
         fusion, _gap = _nearest_frame(fusion_frames, fusion_times, float(timestamp) * 1000.0, 300.0)
-        if fusion is not None:
+        unp, _ = _nearest_frame(unp_frames, unp_times, float(timestamp) * 1000.0, 300.0)
+        if unp and unp.get("fusion_meta_ms") is not None:
+            fusion, _gap = _nearest_frame(fusion_frames, fusion_times, unp["fusion_meta_ms"], 300.0)
+        fusion_matches_can = fusion is not None and abs(float(fusion["timestamp_ms"]) - float(timestamp) * 1000.0) <= 300.0
+        if fusion_matches_can:
             matched_count += 1
-        front_clear = fusion is not None and is_front_clear({
-            "closest_front_x": fusion["in_lane_front_x"],
-            "closest_front_ttc": fusion["in_lane_front_ttc"],
-        })
+        if unp_frames and unp is None:
+            missing_unp_count += 1
+        front_clear = (
+            fusion_matches_can
+            and (not unp_frames or unp is not None)
+            and is_front_clear(
+                with_leadone_candidate(fusion, unp.get("leadone_info") if unp else None)
+            )
+        )
         base_mask.append(
             _as_bool(acc_on) and not _as_bool(override) and float(selected_speed_raw) > 0.0 and front_clear
         )
+    if missing_unp_count:
+        print(f"警告：设速到达有 {missing_unp_count} 个采样点未匹配到300ms以内的UNP数据，已排除")
     if not matched_count:
         result = _empty_result(start_timestamp, end_timestamp)
         result["skip_reason"] = "no fusion frames within 300 ms of CAN samples"

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from signal_lib import FolderSession, mask_to_segments
+from longitudinal_preprocessor import parse_leadone_info, with_leadone_candidate
 
 
 METRIC_CATEGORY = "MPI"
@@ -208,7 +209,17 @@ def analyze_acc_unreasonable_low_speed(
         unp_match_gap_ms.append(unp_gap)
         fusion_match_gap_ms.append(fusion_gap)
 
-        no_front_target = fusion_frame is not None and not bool(fusion_frame.get("has_front_target", False))
+        lead = unp_frame.get("leadone_info") if unp_frame else None
+        lead_fusion = fusion_frame
+        if unp_frame and unp_frame.get("fusion_meta_ms") is not None:
+            lead_fusion, _ = _nearest_frame(
+                fusion_frames, fusion_timestamps, unp_frame["fusion_meta_ms"], topic_match_tolerance_ms,
+            )
+        combined = with_leadone_candidate(lead_fusion or {}, lead)
+        no_front_target = (
+            fusion_frame is not None and not bool(fusion_frame.get("has_front_target", False))
+            and not combined["following_candidates"] and not combined["leadone_unmatched"]
+        )
         no_traffic_light_stop = unp_frame is not None and not _is_traffic_light_stop(
             unp_frame,
             traffic_light_stop_max_distance_m,
@@ -676,7 +687,7 @@ def _parse_unp_planning_file(file_path: Path) -> list[dict[str, object]]:
     frames: list[dict[str, object]] = []
 
     for match in paragraph_pattern.finditer(content):
-        paragraph = match.group(2).replace("\\", "")
+        paragraph = re.sub(r'\\\r?\n\s*', '', match.group(2)).replace("\\", "")
         timestamp_ms = _extract_stamp_ms(paragraph)
         if timestamp_ms is None:
             continue
@@ -706,9 +717,15 @@ def _parse_unp_planning_file(file_path: Path) -> list[dict[str, object]]:
             _extract_nested_value(paragraph, "traffic_light_decider_info", "raw_traffic_light_status"),
             default=None,
         )
+        fusion_meta_match = re.search(
+            r'/perception/fusion/object_auto"\s*:\s*\{[\s\S]*?"metaTimeMs"\s*:\s*([\d.]+)',
+            paragraph,
+        )
         frames.append(
             {
                 "timestamp_ms": timestamp_ms,
+                "leadone_info": parse_leadone_info(match.group(2)),
+                "fusion_meta_ms": float(fusion_meta_match.group(1)) if fusion_meta_match else None,
                 "curvature_limit_enabled": curve_enabled,
                 "curvature_limit_kph": max(curve_limit_mps, 0.0) * 3.6,
                 "set_speed_kph": max(set_speed_mps, 0.0) * 3.6,
@@ -747,21 +764,27 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
         has_close_front_target = False
         closest_front_x: float | None = None
         closest_front_ttc: float | None = None
-        forward_candidates: list[tuple[float, float | None]] = []
+        objects_by_id = {}
+        in_lane_front = None
 
-        for object_text in re.split(r"\n\s*-\s*", fusion_data):
+        for object_text in re.findall(r"\btrack_id:\s*\d+[\s\S]*?(?=\btrack_id:|\Z)", fusion_data):
             if "track_id:" not in object_text or not re.search(r"available:\s*True", object_text, re.IGNORECASE):
                 continue
             pos_x = _parse_float_value(_extract_proto_vector_value(object_text, "relative_position", "x"), default=None)
             pos_y = _parse_float_value(_extract_proto_vector_value(object_text, "relative_position", "y"), default=None)
             if pos_x is None or pos_y is None:
                 continue
+            ttc = _parse_float_value(_extract_proto_scalar_value(object_text, "crash_risk_ttc"), default=None)
+            target_id = int(re.search(r"track_id:\s*(\d+)", object_text).group(1))
+            target = {
+                "id": target_id, "x": pos_x, "y": pos_y, "ttc": ttc,
+            }
+            objects_by_id[target_id] = target
             if abs(pos_y) > FRONT_TARGET_MAX_ABS_Y_METERS:
                 continue
-
-            ttc = _parse_float_value(_extract_proto_scalar_value(object_text, "crash_risk_ttc"), default=None)
             if pos_x > 0.0:
-                forward_candidates.append((pos_x, ttc))
+                if in_lane_front is None or pos_x < in_lane_front["x"]:
+                    in_lane_front = target
             close_front = 0.0 < pos_x < FRONT_TARGET_CLOSE_DISTANCE_METERS
             ttc_front = (
                 ttc is not None
@@ -775,7 +798,6 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
                 if ttc is not None:
                     closest_front_ttc = ttc if closest_front_ttc is None else min(closest_front_ttc, ttc)
 
-        nearest_forward = min(forward_candidates, key=lambda item: item[0]) if forward_candidates else (None, None)
         frames.append(
             {
                 "timestamp_ms": timestamp_ms,
@@ -783,8 +805,10 @@ def _parse_fusion_object_file(file_path: Path) -> list[dict[str, object]]:
                 "has_close_front_target": has_close_front_target,
                 "closest_front_x": closest_front_x,
                 "closest_front_ttc": closest_front_ttc,
-                "in_lane_front_x": nearest_forward[0],
-                "in_lane_front_ttc": nearest_forward[1],
+                "in_lane_front_x": in_lane_front["x"] if in_lane_front else None,
+                "in_lane_front_ttc": in_lane_front["ttc"] if in_lane_front else None,
+                "objects_by_id": objects_by_id,
+                "in_lane_front": in_lane_front,
             }
         )
 

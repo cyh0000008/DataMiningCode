@@ -84,6 +84,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         result_values = _calc_segment_start_latency(segment)
         if result_values is not None:
@@ -91,9 +92,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values, latency_threshold))
                 check_result = True
-                ttc_values.append(f"[Latency Dangerous! front_car_start_time_ms:{result_values['front_car_start_time_ms']} , ego_car_start_time_ms:{result_values['ego_car_start_time_ms']}, latency_sec:{result_values['latency_sec']:.2f} s, end_vel: {result_values['end_vel']:.6f}]")
+                ttc_values.append(f"[Latency Dangerous! front_car_start_time_ms:{result_values['front_car_start_time_ms']} , ego_car_start_time_ms:{result_values['ego_car_start_time_ms']}, latency_sec:{result_values['latency_sec']:.2f} s, end_vel: {result_values['end_vel']:.6f}, target_id:{target_id}]")
             else:
-                ttc_values.append(f"[front_car_start_time_ms:{result_values['front_car_start_time_ms']} , ego_car_start_time_ms:{result_values['ego_car_start_time_ms']}, latency_sec:{result_values['latency_sec']:.2f} s, end_vel: {result_values['end_vel']:.6f}]")
+                ttc_values.append(f"[front_car_start_time_ms:{result_values['front_car_start_time_ms']} , ego_car_start_time_ms:{result_values['ego_car_start_time_ms']}, latency_sec:{result_values['latency_sec']:.2f} s, end_vel: {result_values['end_vel']:.6f}, target_id:{target_id}]")
         else:
             ttc_values.append(f"不存在前车车速>0.5且持续3帧至本车车速>0.5的时段，不考虑")
 
@@ -288,6 +289,9 @@ def _find_risk_segments(
                 print(f"警告：写入Debug日志失败 - {str(e)}")
 
     # ====================== 原有参数配置 ======================
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []  # 存储当前候选段落的unp_para
     prev_params = None    # 存储上一帧的风险参数（用于判断起点）

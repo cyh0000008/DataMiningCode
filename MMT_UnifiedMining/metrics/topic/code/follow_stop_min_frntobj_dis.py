@@ -86,15 +86,18 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
     }
     frame_indices = {id(frame): index for index, frame in enumerate(comprehensive_frames)}
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         observation = _measure_stable_stop_distance(
-            segment, comprehensive_frames, frame_indices[id(segment[-1])],
+            segment,
+            comprehensive_frames,
+            frame_indices[id(segment[-1].get("_original_frame", segment[-1]))],
         )
         if observation.get("excluded_reason"):
             case_statistics["Excluded Case"] += 1
             stop_frntobj_dis_values.append(
-                "[未统计跟车刹停距离 time:%s, 原因:%s]" % (
-                    observation.get("stop_time_ms"), observation["excluded_reason"],
+                "[未统计跟车刹停距离 time:%s, 原因:%s, target_id:%s]" % (
+                    observation.get("stop_time_ms"), observation["excluded_reason"], target_id,
                 )
             )
             continue
@@ -104,8 +107,8 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         curr_vel = observation["ego_speed"]
         case_statistics["All Case Count"] += 1
         window_description = (
-            ", stable_window_ms:[%.3f,%.3f], distance_sample:median, sample_count:%d"
-            % (stop_dis_time + 1000, stop_dis_time + 2000, observation["sample_count"])
+            ", stable_window_ms:[%.3f,%.3f], distance_sample:median, sample_count:%d, target_id:%s"
+            % (stop_dis_time + 1000, stop_dis_time + 2000, observation["sample_count"], target_id)
         )
         if stop_lon_dis is not None:
             if _check_stop_frntobj_dis_valid(stop_lon_dis, dis_lower_bound, dis_upper_bound) is not True:
@@ -156,6 +159,9 @@ def _find_risk_segments(
     comprehensive_frames: List[Dict]
 ) -> List[List[Dict]]:
     """查找连续风险段落：unp段落匹配的fusion段落crash_risk_ttc < 20（适配字典格式）"""
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []
     # 有效风险段最小持续的帧数
@@ -249,6 +255,8 @@ def _measure_stable_stop_distance(segment: List[Dict], frames: List[Dict], stop_
     reached_end = False
     for frame_index in range(stop_index, len(frames)):
         frame = frames[frame_index]
+        if "_original_frame" in segment[-1]:
+            frame = lonprepro.project_follow_target(frame, target_id)
         unp = frame.get("unp_frame_data", {})
         timestamp = lonprepro._get_unp_fusion_meta_time(unp)
         chassis_time = lonprepro._get_unp_chassis_meta_time(unp)

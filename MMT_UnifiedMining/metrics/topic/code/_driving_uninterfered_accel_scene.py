@@ -157,7 +157,8 @@ def extract_observations(comprehensive_frames: list[dict[str, Any]]) -> list[dic
                 "set_speed_kph": set_speed,
                 "override_active": override_active,
                 "acc_active": acc_active,
-                "front_present": _as_bool(fusion.get("f_potential_cipv_by_pos"))
+                "front_present": bool(fusion.get("following_candidates")) or bool(fusion.get("leadone_unmatched"))
+                or _as_bool(fusion.get("f_potential_cipv_by_pos"))
                 or _as_bool(fusion.get("f_potential_cipv_in_trafficlight")),
                 "redlight": _as_bool(traffic.get("f_RedLightOn")),
                 "stop_distance_m": stop_distance,

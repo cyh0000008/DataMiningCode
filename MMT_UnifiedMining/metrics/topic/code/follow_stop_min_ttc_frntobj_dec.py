@@ -80,6 +80,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         result_values = _calc_segment_min_ttc_frntdec(segment)
         if result_values is not None:
@@ -87,9 +88,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(result_values))
                 check_result = True
-                ttc_values.append(f"[TTC Dangerous! time:{result_values['time']} , ttc:{result_values['min_ttc']:.6f}, curr_vel: {result_values['ego_vel']:.6f}, obj_vel: {result_values['obj_vel']:.6f}, obj_lon_dis: {result_values['obj_lon_dis']:.6f}]")
+                ttc_values.append(f"[TTC Dangerous! time:{result_values['time']} , ttc:{result_values['min_ttc']:.6f}, curr_vel: {result_values['ego_vel']:.6f}, obj_vel: {result_values['obj_vel']:.6f}, obj_lon_dis: {result_values['obj_lon_dis']:.6f}, target_id:{target_id}]")
             else:
-                ttc_values.append(f"[time:{result_values['time']} , ttc:{result_values['min_ttc']:.6f}, curr_vel: {result_values['ego_vel']:.6f}, obj_vel: {result_values['obj_vel']:.6f}, obj_lon_dis: {result_values['obj_lon_dis']:.6f}]")
+                ttc_values.append(f"[time:{result_values['time']} , ttc:{result_values['min_ttc']:.6f}, curr_vel: {result_values['ego_vel']:.6f}, obj_vel: {result_values['obj_vel']:.6f}, obj_lon_dis: {result_values['obj_lon_dis']:.6f}, target_id:{target_id}]")
         else:
             ttc_values.append(f"不存在前车减速度≤-0.5开始，自车速度≥0.2的时段，不考虑")
 
@@ -116,6 +117,9 @@ def _find_risk_segments(
     comprehensive_frames: List[Dict]
 ) -> List[List[Dict]]:
     """查找连续风险段落：unp段落匹配的fusion段落crash_risk_ttc < 20（适配字典格式）"""
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []
     # 有效风险段最小持续的帧数

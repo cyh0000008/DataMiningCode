@@ -6,7 +6,7 @@ import json
 import time
 import sys
 import math
-from typing import List, Dict, Optional, Tuple, Any, Union
+from typing import List, Dict, Optional, Tuple, Any, Union, Callable
 
 
 def _configure_console_encoding():
@@ -55,6 +55,14 @@ def is_acc_controlling(comp_frame: Dict) -> bool:
 
 def is_front_clear(fusion: Dict) -> bool:
     """Allow no forward target, or a target beyond 20 m with TTC above 8 s."""
+    if fusion.get("leadone_unmatched", False):
+        return False
+    if "front_candidates" in fusion:
+        return all(is_front_clear({
+            "closest_front_x": target.get("x"),
+            "closest_front_ttc": target.get("ttc"),
+            "f_potential_cipv_by_pos": True,
+        }) for target in fusion["front_candidates"])
     distance = fusion.get("closest_front_x")
     if distance is None:
         return not (
@@ -67,6 +75,96 @@ def is_front_clear(fusion: Dict) -> bool:
         and distance > 20.0
         and isinstance(ttc, (int, float)) and ttc > 8.0
     )
+
+
+def parse_leadone_info(content: str) -> Optional[Dict]:
+    normalized = re.sub(r'\\\r?\n\s*', '', content).replace(r'\"', '"')
+    match = re.search(r'"leadone_info"\s*:\s*(\{[^{}]*\})', normalized)
+    if match is None:
+        return None
+    return json.loads(match.group(1))
+
+
+def with_leadone_candidate(
+    fusion: Dict, lead: Optional[Dict], reference_time_ms: Optional[float] = None,
+) -> Dict:
+    """Keep position and planning candidates separately, deduplicated by track ID."""
+    result = dict(fusion)
+    following = []
+    clearance = []
+    objects = fusion.get("objects_by_id", {})
+    original = objects.get(fusion.get("closest_obj_id"))
+    if original is not None:
+        following.append(original)
+    nearest = fusion.get("in_lane_front")
+    if nearest is not None:
+        clearance.append(nearest)
+    lead_id = lead.get("object_id") if lead else None
+    result["leadone_unmatched"] = False
+    if isinstance(lead_id, (int, float)) and lead_id >= 0:
+        target = objects.get(lead_id)
+        if reference_time_ms is not None and abs(fusion.get("timestamp_ms", float("inf")) - reference_time_ms) > 300.0:
+            target = None
+        if target is None:
+            result["leadone_unmatched"] = True
+            print(f"警告：leadone目标 {lead_id} 未匹配到有效Fusion目标，前车排除场景不放行")
+        else:
+            for candidates in (following, clearance):
+                if all(item["id"] != target["id"] for item in candidates):
+                    candidates.append(target)
+    result["following_candidates"] = following
+    result["front_candidates"] = clearance
+    return result
+
+
+def project_follow_target(frame: Dict, target_id: int) -> Dict:
+    fusion = frame.get("matched_fusion") or {}
+    target = next((item for item in fusion.get("following_candidates", []) if item["id"] == target_id), None)
+    projected = dict(frame)
+    projected["_original_frame"] = frame
+    projected["matched_fusion"] = {}
+    if target is not None and (
+        all(isinstance(target.get(key), (int, float)) and math.isfinite(target[key])
+            for key in ("x", "y", "velocity", "acceleration", "length"))
+        and target["x"] > 0 and target["length"] > 0
+        and isinstance(target.get("ttc"), (int, float)) and not math.isnan(target["ttc"])
+    ):
+        selected = dict(fusion)
+        selected.pop("following_candidates", None)
+        selected.update(
+            closest_obj_id=target_id, closest_obj_x=target.get("x"),
+            closest_obj_y=target.get("y"), closest_obj_vel=target.get("velocity"),
+            closest_obj_acc=target.get("acceleration"), closest_obj_len=target.get("length"),
+            min_ttc=target.get("ttc"), f_potential_cipv_by_pos=True,
+        )
+        projected["matched_fusion"] = selected
+    return projected
+
+
+def find_follow_candidate_segments(
+    frames: List[Dict], finder: Callable[[List[Dict]], List[List[Dict]]],
+) -> Optional[List[List[Dict]]]:
+    if not any("following_candidates" in (frame.get("matched_fusion") or {}) for frame in frames):
+        return None
+    target_runs: Dict[int, List[List[int]]] = {}
+    for index, frame in enumerate(frames):
+        for target in (frame.get("matched_fusion") or {}).get("following_candidates", []):
+            if not project_follow_target(frame, target["id"])["matched_fusion"]:
+                continue
+            runs = target_runs.setdefault(target["id"], [])
+            if runs and runs[-1][1] == index:
+                runs[-1][1] = index + 1
+            else:
+                runs.append([index, index + 1])
+    segments = []
+    for target_id, runs in target_runs.items():
+        for start, end in runs:
+            projected = [
+                project_follow_target(frame, target_id)
+                for frame in frames[start:min(end + 1, len(frames))]
+            ]
+            segments.extend(finder(projected))
+    return sorted(segments, key=lambda segment: segment[0]["unp_timestamp_ms"])
 
 # ------------------------------ 获取bag_path下的直接子文件夹列表（仅一级） ------------------------------
 def get_immediate_subfolders(path):
@@ -501,6 +599,7 @@ def _parse_unp_planning(unp_content: str) -> List[Dict]:
                 header_time_ms = float(timestamp_str)
 
             frame_data = {"raw_content": ""}
+            frame_data["leadone_info"] = parse_leadone_info(para)
             input_msg_match = re.search(r'"InputMessageInfo":\s*{\s*"messageInfos":\s*{([\s\S]*?)}\s*}', para, re.MULTILINE)
             if input_msg_match:
                 frame_data["InputMessageInfo"] = {"messageInfos": {}}
@@ -788,11 +887,12 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             object_pattern = r'(?s)track_id:\s*\d+[\s\S]*?extra_json:\s*".*?"'
             objects = re.findall(object_pattern, fusion_data)
             ttc_list = []
-            front_candidates = []
             f_potential_cipv_by_pos = False
             f_potential_cipv_in_trafficlight = False
             # 新增：存储满足位置条件的目标坐标 (x, y)
             valid_objs = []
+            objects_by_id = {}
+            in_lane_front = None
 
             for obj in objects:
                 # 验证目标是否包含 track_id 和 available: True（双重校验有效目标）
@@ -810,19 +910,25 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
                 # 提取relative_position下的x,y值（兼容正负、整数/小数、多行/多空格）
                 pos_x_match = re.search(r'relative_position:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_y_match = re.search(r'relative_position:\s*[\s\S]*?y:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
-                if pos_x_match and pos_y_match:
-                    pos_x_value = float(pos_x_match.group(1))
-                    pos_y_value = float(pos_y_match.group(1))
-                    # Consider both the current in-path target and a cut-in once it
-                    # enters the forward lane corridor.
-                    if pos_x_value > 0.0 and -1.5 <= pos_y_value <= 1.5:
-                        front_candidates.append((
-                            pos_x_value,
-                            float(ttc_match.group(1)) if ttc_match else None,
-                        ))
                 pos_vel_match = re.search(r'velocity_relative_to_ground:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_acc_match = re.search(r'acceleration_relative_to_ground:\s*[\s\S]*?x:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
                 pos_len_match = re.search(r'shape:\s*[\s\S]*?length:\s*(-?\d+\.?\d*)',obj,re.MULTILINE)
+                target = {
+                    "id": int(track_id_match.group(1)),
+                    "x": float(pos_x_match.group(1)) if pos_x_match else None,
+                    "y": float(pos_y_match.group(1)) if pos_y_match else None,
+                    "ttc": float(ttc_match.group(1)) if ttc_match else None,
+                    "velocity": float(pos_vel_match.group(1)) if pos_vel_match else None,
+                    "acceleration": float(pos_acc_match.group(1)) if pos_acc_match else None,
+                    "length": float(pos_len_match.group(1)) if pos_len_match else None,
+                }
+                objects_by_id[target["id"]] = target
+                if (
+                    target["x"] is not None and target["x"] > 0
+                    and target["y"] is not None and abs(target["y"]) <= 1.5
+                    and (in_lane_front is None or target["x"] < in_lane_front["x"])
+                ):
+                    in_lane_front = target
                 if pos_x_match and pos_y_match and pos_vel_match and pos_acc_match and pos_len_match:
                     pos_x_value = float(pos_x_match.group(1))
                     pos_y_value = float(pos_y_match.group(1))
@@ -845,8 +951,8 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             closest_obj_x = None
             closest_front_x = None
             closest_front_ttc = None
-            if front_candidates:
-                closest_front_x, closest_front_ttc = min(front_candidates, key=lambda item: item[0])
+            if in_lane_front is not None:
+                closest_front_x, closest_front_ttc = in_lane_front["x"], in_lane_front["ttc"]
             closest_obj_id = None
             closest_obj_y = None
             closest_obj_vel = None
@@ -861,6 +967,8 @@ def _parse_fusion_obj_auto(fusion_content: str) -> List[Dict]:
             parsed.append({
                 "timestamp_ms": timestamp_ms,
                 "has_valid_fusion_data": True,
+                "objects_by_id": objects_by_id,
+                "in_lane_front": in_lane_front,
                 "min_ttc": min_ttc,
                 "f_potential_cipv_by_pos": f_potential_cipv_by_pos,
                 "f_potential_cipv_in_trafficlight": f_potential_cipv_in_trafficlight,
@@ -1222,6 +1330,10 @@ def _build_comprehensive_frame_dict(
         
         # 匹配最近段落
         frame_dict["matched_fusion"] = _find_closest_paragraph(fusion_base_time_ms, fusion_paragraphs) if fusion_base_time_ms else None
+        if frame_dict["matched_fusion"] is not None:
+            frame_dict["matched_fusion"] = with_leadone_candidate(
+                frame_dict["matched_fusion"], unp_frame_data.get("leadone_info"), fusion_base_time_ms,
+            )
         frame_dict["matched_chassis"] = _find_closest_paragraph(chassis_base_time_ms, chassis_paragraphs) if chassis_base_time_ms else None
         frame_dict["matched_msd_control"] = _find_closest_paragraph(msd_base_time_ms, msd_control_paragraphs) if msd_base_time_ms else None
         frame_dict["matched_body"] = _find_closest_paragraph(body_base_time_ms, body_paragraphs) if body_base_time_ms else None

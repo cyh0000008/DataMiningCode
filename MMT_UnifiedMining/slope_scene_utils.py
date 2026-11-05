@@ -24,7 +24,7 @@ def find_steady_slope_segments(
         timestamp = frame.get("unp_timestamp_ms")
         speed = params["velocity"]
         set_speed = frame.get("unp_frame_data", {}).get("Acc_info", {}).get("SetSpeed")
-        front_clear = is_front_clear(params)
+        front_clear = is_front_clear(frame.get("matched_fusion") or params)
         numeric = all(
             isinstance(value, (int, float)) and math.isfinite(value)
             for value in (timestamp, speed, set_speed, params["slope_acc"], params["curv_spd_limit"])

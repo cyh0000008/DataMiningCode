@@ -47,9 +47,33 @@ CAN set-speed reach uses this same >20 m / >8 s gate throughout its minimum
 8-second scene. It matches Fusion frames to CAN timestamps within 300 ms,
 including concatenated context folders. Missing/unmatched Fusion is not treated
 as an empty road; missing data is reported explicitly when no matching data exists.
-All these gates consider only available targets ahead (`x > 0`) within the lateral
+The position-based candidate considers only available targets ahead (`x > 0`) within the lateral
 corridor `-1.5 <= y <= 1.5 m`, including cut-ins after they enter it. Adjacent-lane
-targets outside this corridor do not block the scene.
+targets outside this corridor do not block the scene unless selected by planning.
+
+UNP `leadone_info.object_id` supplies an additional, independent following candidate.
+It is matched to the available Fusion object with the same `track_id`, using UNP's
+Fusion `metaTimeMs`. This planning-selected candidate is not restricted by the
+position candidate's lateral corridor. Different IDs coexist; equal IDs count once.
+Distance, velocity, acceleration, length and `crash_risk_ttc` always come from the
+same object; `leadone_info.time_distance` is not TTC. All existing target-clearance
+gates require **both** candidates to pass their distance/TTC thresholds. A selected
+ID missing from matched Fusion blocks clearance and emits a warning.
+
+The seven follow-start/follow-stop metrics build and measure scenes independently
+for each candidate ID, splitting on target loss rather than switching objects.
+The target ID must remain unchanged from scene trigger through completion,
+including the front-start detection window. Missing/invalid target frames break
+continuity; a returning ID cannot bridge the gap. A replacement ID must satisfy
+the scene's entry and minimum-length requirements again.
+The stable follow-stop distance observation continues to track the same ID for
+the full two-second observation window. Simultaneous scenes for different IDs
+are separate cases. Uninterfered acceleration and unreasonable-low-speed exclusions
+also recognize the planning-selected target; their other thresholds are unchanged.
+Following measurement logs include `target_id` to distinguish simultaneous cases.
+CAN set-speed reach uses the matching UNP frame (within 300 ms) and its Fusion
+reference time when available. Legacy data without UNP retains position-only
+screening with an explicit warning.
 
 ## Confirmed steady slope scenes
 
@@ -62,8 +86,8 @@ The confirming sample starts the measured segment; the preceding dwell is exclud
 Every measured segment must last at least 5 seconds (time-based, not frame-count-based).
 No near front object is allowed; if a forward object exists, its distance must be strictly
 greater than 20 m and its `crash_risk_ttc` strictly greater than 8 s. The nearest
-forward object within the lane corridor is used, including CIPV and cut-in targets once
-they enter that corridor; equality to either threshold fails.
+forward object within the lane corridor and any distinct planning-selected leadone
+object are checked independently; equality to either threshold fails.
 
 Once entered, speed outside the entry band is still included until an original
 base condition fails or SetSpeed changes. Then terminate immediately and require

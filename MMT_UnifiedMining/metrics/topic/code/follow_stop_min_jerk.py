@@ -81,6 +81,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         (min_jerk, min_jerk_time, start_vel) = _calc_segment_min_jerk(segment)
         if min_jerk is not None:
@@ -88,9 +89,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(min_jerk,start_vel))
                 check_result = True
-                min_jerk_values.append(f"[Dec Dangerous! time:{min_jerk_time} , jerk:{min_jerk:.6f}, start_vel: {start_vel:.6f}]")
+                min_jerk_values.append(f"[Dec Dangerous! time:{min_jerk_time} , jerk:{min_jerk:.6f}, start_vel: {start_vel:.6f}, target_id:{target_id}]")
             else:
-                min_jerk_values.append(f"[time:{min_jerk_time} , jerk:{min_jerk:.6f}, start_vel: {start_vel:.6f}]")
+                min_jerk_values.append(f"[time:{min_jerk_time} , jerk:{min_jerk:.6f}, start_vel: {start_vel:.6f}, target_id:{target_id}]")
 
     return (check_result, min_jerk_values, case_statistics)
 
@@ -115,6 +116,9 @@ def _find_risk_segments(
     comprehensive_frames: List[Dict]
 ) -> List[List[Dict]]:
     """查找连续风险段落：unp段落匹配的fusion段落crash_risk_ttc < 20（适配字典格式）"""
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []
     # 有效风险段最小持续的帧数

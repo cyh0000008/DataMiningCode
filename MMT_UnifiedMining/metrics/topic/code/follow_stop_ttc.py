@@ -80,6 +80,7 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
         "Severity Score": float(0.0)
     }
     for i,segment in enumerate(risk_segments):
+        target_id = segment[0]["matched_fusion"].get("closest_obj_id")
         print(f"处理第 {i+1} 个风险段落（含 {len(segment)} 个unp段落）")
         (curr_acc, curr_vel, curr_ttc, ttc_time) = _calc_segment_ttc(segment)
         if curr_ttc is not None:
@@ -87,9 +88,9 @@ def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Di
                 case_statistics["Bad Case"] += 1
                 case_statistics["Severity Score"] = max(case_statistics["Severity Score"], _cal_severity_score(curr_ttc))
                 check_result = True
-                ttc_values.append(f"[TTC Dangerous! time:{ttc_time} , ttc:{curr_ttc:.6f}, curr_vel: {curr_vel:.6f}, curr_acc: {curr_acc:.6f}]")
+                ttc_values.append(f"[TTC Dangerous! time:{ttc_time} , ttc:{curr_ttc:.6f}, curr_vel: {curr_vel:.6f}, curr_acc: {curr_acc:.6f}, target_id:{target_id}]")
             else:
-                ttc_values.append(f"[time:{ttc_time} , ttc:{curr_ttc:.6f}, curr_vel: {curr_vel:.6f}, curr_acc: {curr_acc:.6f}]")
+                ttc_values.append(f"[time:{ttc_time} , ttc:{curr_ttc:.6f}, curr_vel: {curr_vel:.6f}, curr_acc: {curr_acc:.6f}, target_id:{target_id}]")
         else:
             ttc_values.append(f"不存在减速度≤-0.5的时刻，不考虑")
 
@@ -116,6 +117,9 @@ def _find_risk_segments(
     comprehensive_frames: List[Dict]
 ) -> List[List[Dict]]:
     """查找连续风险段落：unp段落匹配的fusion段落crash_risk_ttc < 20（适配字典格式）"""
+    candidate_segments = lonprepro.find_follow_candidate_segments(comprehensive_frames, _find_risk_segments)
+    if candidate_segments is not None:
+        return candidate_segments
     risk_segments = []
     current_segment = []
     # 有效风险段最小持续的帧数
