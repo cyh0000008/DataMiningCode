@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import html
 import json
+from pathlib import Path
 import re
 import secrets
 import socket
@@ -12,6 +13,16 @@ import time
 
 from . import presets
 from .remote_control import FIELDS, RemoteController, _digest
+
+
+BROWSE_FIELDS = {
+    "input_paths": ("输入目录", "input", "basic"),
+    "source_path": ("输入目录", "input", "basic"),
+    "output_dir": ("输出目录", "output", "basic"),
+    "compare_base_path": ("基线报告", "report", "advanced"),
+    "raw_report_archive_dir": ("原始报告保存目录", "output", "advanced"),
+}
+PAGE_SIZE = 8
 
 
 def plain(text: str) -> dict:
@@ -228,6 +239,9 @@ class RemoteCards:
                 if field != "input_paths":
                     options.insert(0, ("", "未设置 / 使用默认"))
                 elements += self._select(session, name, label, options, value, multi=field == "input_paths")
+                elements.append(self._button(session, "浏览" + label,
+                                             {"op": "browse_start", "field": field, "page": page},
+                                             form=True))
             else:
                 elements += self._input(session, name, label, str(value))
         other = "advanced" if page == "basic" else "basic"
@@ -243,6 +257,142 @@ class RemoteCards:
             form, self._button(session, "返回操作台（未提交的输入不会保存）", {"op": "home"}),
         ]
         return self._finish(card, session)
+
+    def _browse_root(self, field: str, alias: str, expected: str | None = None) -> Path:
+        access = BROWSE_FIELDS[field][1]
+        item = self.remote._remote().get("path_aliases", {}).get(alias)
+        if not isinstance(item, dict) or item.get("access") != access:
+            raise ValueError("路径授权已移除或变更，请重新打开浏览器")
+        root = Path(item["path"]).expanduser().resolve(strict=True)
+        if expected is not None and str(root) != expected:
+            raise ValueError("路径授权已变更，请重新打开浏览器")
+        self.remote._path(str(root), access, file=root.is_file())
+        if not (root.is_dir() or (access == "report" and root.is_file())):
+            raise ValueError("授权根路径不是可浏览的目录或报告")
+        return root
+
+    def _browser_path(self, field: str, alias: str, root_text: str, path_text: str) -> tuple[Path, Path]:
+        root = self._browse_root(field, alias, root_text)
+        path = Path(path_text).resolve(strict=True)
+        if not (path == root or (root.is_dir() and path.is_relative_to(root))):
+            raise ValueError("路径超出授权根目录")
+        self.remote._path(str(path), BROWSE_FIELDS[field][1],
+                          file=field == "compare_base_path" and path.is_file())
+        return root, path
+
+    def browse_roots(self, field: str, page: int = 0) -> tuple[dict, str]:
+        label, access, editor_page = BROWSE_FIELDS[field]
+        aliases = self.remote._remote().get("path_aliases", {})
+        names = sorted((name for name, item in aliases.items()
+                        if isinstance(item, dict) and item.get("access") == access), key=str.casefold)
+        count = max(1, (len(names) + PAGE_SIZE - 1) // PAGE_SIZE)
+        if page < 0 or page >= count:
+            raise ValueError("浏览页码无效")
+        card, session = self._page("选择" + label + " · 授权目录", mutable=True)
+        entries = []
+        for name in names[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]:
+            root = self._browse_root(field, name)
+            entries.append(self._button(session, name[:95], {
+                "op": "browse_path", "field": field, "alias": name,
+                "root": str(root), "path": str(root), "index": 0,
+            }))
+        controls = []
+        if page:
+            controls.append(self._button(session, "上一页", {"op": "browse_roots", "field": field, "index": page - 1}))
+        if page + 1 < count:
+            controls.append(self._button(session, "下一页", {"op": "browse_roots", "field": field, "index": page + 1}))
+        controls.append(self._button(session, "返回参数", {"op": "editor", "page": editor_page}, primary=True))
+        card["body"]["elements"] = [
+            markdown(f"**请选择本机授权的{escaped(label)}根目录**\n"
+                     + (f"第 {page + 1}/{count} 页" if names else "暂无授权，请在电脑的飞书远程路径设置中添加。")),
+            {"tag": "column_set", "flex_mode": "none", "columns": [
+                {"tag": "column", "width": "weighted", "weight": 1,
+                 "elements": entries or [markdown("没有可用目录。")]}]},
+            columns(controls),
+        ]
+        return self._finish(card, session)
+
+    def browse_path(self, field: str, alias: str, root_text: str, path_text: str, index: int = 0) -> tuple[dict, str]:
+        label, access, editor_page = BROWSE_FIELDS[field]
+        root, path = self._browser_path(field, alias, root_text, path_text)
+        if path.is_file():
+            return self._select_browsed(field, alias, root_text, str(path))
+        if not path.is_dir():
+            raise ValueError("目录已不存在或无法访问")
+        entries = []
+        missing_entries = 0
+        for child in path.iterdir():
+            try:
+                resolved = child.resolve(strict=True)
+            except FileNotFoundError:
+                missing_entries += 1
+                continue
+            if not (resolved == root or resolved.is_relative_to(root)):
+                continue
+            if child.is_dir():
+                entries.append((child.name, child, True))
+            elif access == "report" and child.is_file() and child.suffix.lower() == ".xlsx":
+                entries.append((child.name, child, False))
+        entries.sort(key=lambda item: (not item[2], item[0].casefold(), item[0]))
+        count = max(1, (len(entries) + PAGE_SIZE - 1) // PAGE_SIZE)
+        if index < 0 or index >= count:
+            raise ValueError("目录内容已变更，请重新打开浏览器")
+        card, session = self._page("浏览" + label, mutable=True)
+        action = {"field": field, "alias": alias, "root": root_text}
+        buttons = []
+        for name, child, is_dir in entries[index * PAGE_SIZE:(index + 1) * PAGE_SIZE]:
+            buttons.append(self._button(session, ("📁 " if is_dir else "📄 ") + name[:90],
+                                        {"op": "browse_path", **action, "path": str(child), "index": 0}))
+        if not buttons:
+            buttons = [markdown("该目录没有可选的子目录或报告文件。")]
+        nav = []
+        if index:
+            nav.append(self._button(session, "上一页", {"op": "browse_path", **action, "path": str(path), "index": index - 1}))
+        if index + 1 < count:
+            nav.append(self._button(session, "下一页", {"op": "browse_path", **action, "path": str(path), "index": index + 1}))
+        if path != root:
+            nav.append(self._button(session, "上一级", {"op": "browse_path", **action, "path": str(path.parent), "index": 0}))
+        nav.append(self._button(session, "授权目录", {"op": "browse_roots", "field": field, "index": 0}))
+        nav.append(self._button(session, "返回参数", {"op": "editor", "page": editor_page}))
+        if access != "report":
+            nav.insert(0, self._button(session, "选择此目录" if field != "input_paths" else "添加此目录",
+                                       {"op": "browse_select", **action, "path": str(path)}, primary=True))
+        else:
+            nav[0]["type"] = "primary_filled"
+        card["body"]["elements"] = [
+            markdown(f"**{escaped(alias)}**\n{escaped(str(path))}\n第 {index + 1}/{count} 页"
+                     + (f"\n{missing_entries} 个失效或已删除的项目未显示。" if missing_entries else "")),
+            {"tag": "column_set", "flex_mode": "none", "columns": [
+                {"tag": "column", "width": "weighted", "weight": 1, "elements": buttons}]},
+            columns(nav),
+        ]
+        return self._finish(card, session)
+
+    def _select_browsed(self, field: str, alias: str, root_text: str, path_text: str) -> tuple[dict, str]:
+        _, path = self._browser_path(field, alias, root_text, path_text)
+        if field == "compare_base_path":
+            if not path.is_file() or path.suffix.lower() != ".xlsx":
+                raise ValueError("请选择存在的 XLSX 报告")
+        elif not path.is_dir():
+            raise ValueError("请选择存在的目录")
+        value = str(path)
+        if "\n" in value or "\r" in value or (field == "input_paths" and (";" in value or "；" in value)):
+            raise ValueError("此路径包含不支持的换行或分号，无法用于表单")
+        draft = self.remote._need_draft()
+        data = dict(draft["data"])
+        if field == "input_paths":
+            values = list(data[field])
+            normalized = {self.remote._path(item, "input") for item in values}
+            if value not in normalized:
+                values.append(value)
+            data[field] = values
+        else:
+            data[field] = value
+        spec = self.remote._spec(draft["kind"], data)
+        draft["data"] = spec.to_dict()
+        self.remote.pending = None
+        self.remote._persist()
+        return self.editor(BROWSE_FIELDS[field][2], notice=f"已选择{BROWSE_FIELDS[field][0]}：{value}")
 
     def confirmation(self, summary: str) -> tuple[dict, str]:
         pending = self.remote.pending
@@ -404,6 +554,16 @@ class RemoteCards:
             command = "运行草稿" if next_page == "run" else "保存预设 " + values.get("preset_name", session["preset_name"]).strip()
             reply = self.remote.handle(command)
             return self.confirmation(reply) if self.remote.pending else self.editor(notice=reply)
+        if op == "browse_start":
+            self._edit(session, values)
+            return self.browse_roots(action["field"])
+        if op == "browse_roots":
+            return self.browse_roots(action["field"], action["index"])
+        if op == "browse_path":
+            return self.browse_path(action["field"], action["alias"], action["root"],
+                                    action["path"], action["index"])
+        if op == "browse_select":
+            return self._select_browsed(action["field"], action["alias"], action["root"], action["path"])
         if op == "confirm":
             reply = self.remote.handle(action["command"])
             if action["command"].startswith("确认运行"):

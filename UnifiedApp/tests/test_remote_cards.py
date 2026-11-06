@@ -115,6 +115,165 @@ class RemoteCardTests(unittest.TestCase):
         self.assertEqual(saved["max_depth"], 8)
         self.changed.assert_called_once_with("mmt")
 
+    def test_browser_mmt_preserves_form_and_selects_nested_paths(self):
+        self.cards()
+        nested = self.inputs / "车辆" / "采集"
+        nested.mkdir(parents=True)
+        out = self.outputs / "结果"
+        out.mkdir()
+        roots = self.click(self.views.editor(), "浏览输入目录",
+                           {"preset_name": "new name", "field_vehicle": "E3"})
+        self.assertEqual(self.controller.draft["data"]["vehicle"], "E3")
+        level = self.click(roots, "数据")
+        level = self.click(level, "📁 车辆")
+        level = self.click(level, "📁 采集")
+        editor = self.click(level, "选择此目录")
+        self.assertEqual(self.controller.draft["data"]["source_path"], str(nested.resolve()))
+        self.assertEqual(self.controller.draft["card_save_name"], "new name")
+        roots = self.click(editor, "浏览输出目录")
+        level = self.click(roots, "报告")
+        level = self.click(level, "📁 结果")
+        self.click(level, "选择此目录")
+        self.assertEqual(self.controller.draft["data"]["output_dir"], str(out.resolve()))
+        self.manager.submit_mmt.assert_not_called()
+
+    def test_browser_j6b_multi_select_remove_and_cancel(self):
+        self.cards("J6B")
+        (self.inputs / "one").mkdir()
+        (self.inputs / "two").mkdir()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        view = self.click(self.click(roots, "数据"), "📁 one")
+        editor = self.click(view, "添加此目录")
+        roots = self.click(editor, "浏览输入目录")
+        view = self.click(self.click(roots, "数据"), "📁 two")
+        editor = self.click(view, "添加此目录")
+        selected = self.controller.draft["data"]["input_paths"]
+        self.assertEqual(selected, ["数据", str((self.inputs / "one").resolve()),
+                                    str((self.inputs / "two").resolve())])
+        roots = self.click(editor, "浏览输入目录", {"field_input_paths": selected[1:]})
+        before = deepcopy(self.controller.draft)
+        self.click(roots, "返回参数")
+        self.assertEqual(self.controller.draft, before)
+        self.assertEqual(self.controller.draft["data"]["input_paths"], selected[1:])
+
+    def test_browser_report_archive_pagination_and_root_file(self):
+        self.cards()
+        for i in range(10):
+            (self.outputs / f"dir{i:02}").mkdir()
+        report = self.outputs / "基线.xlsx"
+        report.write_text("test", encoding="utf-8")
+        (self.outputs / "ignore.txt").write_text("test", encoding="utf-8")
+        editor = self.views.editor("advanced")
+        roots = self.click(editor, "浏览基线报告")
+        view = self.click(roots, "基线")
+        view = self.click(view, "下一页")
+        self.assertNotIn("ignore.txt", json.dumps(view[0], ensure_ascii=False))
+        editor = self.click(view, "📄 基线.xlsx")
+        self.assertEqual(self.controller.draft["data"]["compare_base_path"], str(report.resolve()))
+        roots = self.click(editor, "浏览原始报告保存目录")
+        view = self.click(roots, "报告")
+        view = self.click(view, "📁 dir00")
+        editor = self.click(view, "选择此目录")
+        self.assertEqual(self.controller.draft["data"]["raw_report_archive_dir"],
+                         str((self.outputs / "dir00").resolve()))
+        self.config["remote"]["path_aliases"]["文件"] = {"path": str(report), "access": "report"}
+        self.write_config()
+        roots = self.click(editor, "浏览基线报告")
+        self.click(roots, "文件")
+        self.assertEqual(self.controller.draft["data"]["compare_base_path"], str(report.resolve()))
+
+    def test_browser_rechecks_authorization_and_rejects_stale_card(self):
+        self.cards()
+        (self.inputs / "child").mkdir()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        view = self.click(roots, "数据")
+        before = deepcopy(self.controller.draft)
+        self.config["remote"]["path_aliases"].pop("数据")
+        self.write_config()
+        with self.assertRaisesRegex(ValueError, "授权"):
+            self.click(view, "📁 child")
+        self.assertEqual(self.controller.draft, before)
+        with self.assertRaisesRegex(ValueError, "过期"):
+            self.click(view, "📁 child")
+
+    def test_browser_filters_symlink_escape(self):
+        self.cards()
+        outside = self.root / "outside"
+        outside.mkdir()
+        link = self.inputs / "escape"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("directory symlinks unavailable")
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        view = self.click(roots, "数据")
+        self.assertNotIn("escape", json.dumps(view[0], ensure_ascii=False))
+
+    def test_browser_handles_removed_directory_and_no_authorization(self):
+        self.cards()
+        child = self.inputs / "child"
+        child.mkdir()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        view = self.click(roots, "数据")
+        child.rmdir()
+        before = deepcopy(self.controller.draft)
+        with self.assertRaises(OSError):
+            self.click(view, "📁 child")
+        self.assertEqual(self.controller.draft, before)
+        self.config["remote"]["path_aliases"].pop("数据")
+        self.write_config()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        self.assertIn("暂无授权", json.dumps(roots[0], ensure_ascii=False))
+        self.click(roots, "返回参数")
+
+    def test_browser_rejects_retargeted_alias_and_forged_action(self):
+        self.cards()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        self.views.sent(roots[1], "om_" + roots[1])
+        with self.assertRaisesRegex(ValueError, "签发"):
+            self.views.handle({"action_name": "mc_" + roots[1] + "_999",
+                               "action_tag": "button", "message_id": "om_" + roots[1]})
+        view = self.click(roots, "数据")
+        self.config["remote"]["path_aliases"]["数据"]["path"] = str(self.root)
+        self.write_config()
+        with self.assertRaisesRegex(ValueError, "授权已变更"):
+            self.click(view, "选择此目录")
+
+    def test_browser_rejects_directory_retargeted_outside_root(self):
+        self.cards()
+        child = self.inputs / "child"
+        child.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        view = self.click(roots, "数据")
+        original_resolve = Path.resolve
+
+        def redirected(path, *args, **kwargs):
+            return outside if path == child else original_resolve(path, *args, **kwargs)
+
+        before = deepcopy(self.controller.draft)
+        with patch.object(Path, "resolve", redirected):
+            with self.assertRaisesRegex(ValueError, "超出授权"):
+                self.click(view, "📁 child")
+        self.assertEqual(self.controller.draft, before)
+
+    def test_browser_reports_disappeared_or_dangling_entry(self):
+        self.cards()
+        child = self.inputs / "disappeared"
+        child.mkdir()
+        original_resolve = Path.resolve
+
+        def missing(path, *args, **kwargs):
+            if path == child:
+                raise FileNotFoundError(str(path))
+            return original_resolve(path, *args, **kwargs)
+
+        roots = self.click(self.views.editor(), "浏览输入目录")
+        with patch.object(Path, "resolve", missing):
+            view = self.click(roots, "数据")
+        self.assertIn("1 个失效或已删除的项目未显示", json.dumps(view[0], ensure_ascii=False))
+
     def test_existing_save_requires_button_confirmation_and_revision(self):
         self.cards()
         self.controller.handle("保存预设")

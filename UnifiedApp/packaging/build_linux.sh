@@ -12,6 +12,7 @@
 #   4. 检测中文字体，缺少时自动安装 fonts-noto-cjk 并复查；
 #   5. 执行 PyInstaller 打包。
 #   6. 如已安装兼容的飞书 CLI，记录其绝对路径到应用，避免桌面 PATH 选中旧版。
+#   7. 构建成功后，若当前用户没有路径授权，则配置飞书根目录授权。
 #
 set -euo pipefail
 
@@ -208,6 +209,9 @@ if [[ ! -f "${EXE_PATH}" ]]; then
   exit 1
 fi
 chmod +x "${EXE_PATH}"
+
+log "检查当前用户的飞书远程路径授权..."
+"${PYTHON_BIN}" -m unified_app.build_remote_paths
 
 echo ""
 echo "可执行文件已生成："
