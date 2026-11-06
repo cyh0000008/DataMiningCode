@@ -9,15 +9,18 @@
 各自机器上配置好的 Python 解释器运行（见“环境设置”对话框）。
 """
 
+import os
 from pathlib import Path
 
 project_root = Path(SPECPATH).resolve().parent
+cli_manifest = os.environ.get("UNIFIED_LARK_CLI_MANIFEST")
+datas = [(cli_manifest, ".")] if cli_manifest else []
 
 a = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -11,6 +11,7 @@
 #      有 root/sudo 权限时才会执行，失败不会中断打包，只会给出提示）；
 #   4. 检测中文字体，缺少时自动安装 fonts-noto-cjk 并复查；
 #   5. 执行 PyInstaller 打包。
+#   6. 如已安装兼容的飞书 CLI，记录其绝对路径到应用，避免桌面 PATH 选中旧版。
 #
 set -euo pipefail
 
@@ -174,6 +175,30 @@ log "升级 pip 并安装 Python 依赖（requirements.txt + pyinstaller）..."
 # ----------------------------------------------------------------------
 # 5. 执行打包
 # ----------------------------------------------------------------------
+CLI_MANIFEST_DIR=""
+cleanup_cli_manifest() {
+  if [[ -n "${CLI_MANIFEST_DIR}" ]]; then
+    rm -f -- "${CLI_MANIFEST_DIR}/mining-lark-cli-path.txt"
+    rmdir -- "${CLI_MANIFEST_DIR}"
+  fi
+}
+trap cleanup_cli_manifest EXIT
+
+if [[ -n "${MINING_LARK_CLI:-}" ]] || command -v lark-cli >/dev/null 2>&1 ||
+   [[ -x "${HOME}/.npm-global/bin/lark-cli" ]] || [[ -x "${HOME}/.local/bin/lark-cli" ]]; then
+  if ! CLI_PATH="$("${PYTHON_BIN}" -m unified_app.lark_cli)"; then
+    log "错误：飞书 CLI 不可用或版本过旧；请安装 1.0.99 或更新版本后重新打包。" >&2
+    exit 1
+  fi
+  CLI_MANIFEST_DIR="$(mktemp -d)"
+  printf '%s\n' "${CLI_PATH}" > "${CLI_MANIFEST_DIR}/mining-lark-cli-path.txt"
+  export UNIFIED_LARK_CLI_MANIFEST="${CLI_MANIFEST_DIR}/mining-lark-cli-path.txt"
+  log "飞书 CLI 已验证并固定到打包应用：${CLI_PATH}"
+else
+  unset UNIFIED_LARK_CLI_MANIFEST
+  log "警告：未找到飞书 CLI，本次应用仍可打包；飞书功能需安装 1.0.99 或更新版本后重新打包。"
+fi
+
 log "开始执行 PyInstaller 打包..."
 "${PYTHON_BIN}" -m PyInstaller --noconfirm --clean "${PROJECT_ROOT}/packaging/UnifiedApp.spec"
 

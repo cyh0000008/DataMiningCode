@@ -6,6 +6,16 @@
 ## 本机准备
 
 1. 安装项目依赖和 Node.js，然后安装 CLI：`npm install -g @larksuite/cli`。
+   Linux 桌面应用需要 CLI 1.0.99 或更新版本。在 `UnifiedApp/packaging` 目录运行
+   `bash build_linux.sh`，脚本自动优先查找 `~/.npm-global/bin/lark-cli`、
+   `~/.local/bin/lark-cli`，再检查 PATH 中的 CLI；校验后将路径写入打包应用，
+   因此双击启动时不会因桌面 PATH
+   不同而误用系统旧版；CLI 自身不被打包或复制，需保留在原路径。
+   若无 CLI，应用仍可打包，但需要安装新版后重新打包才能固定 CLI 路径。
+   当 CLI 被移动或卸载时会明确报错，不会静默切换至旧版；可重新打包或通过
+   `MINING_LARK_CLI` 环境变量显式指定新版可执行文件路径。
+   对标准 npm 安装，优先使用其同包原生 CLI 二进制，以便关闭应用时直接终止监听进程，
+   避免 Node 包装进程退出后遗留卡片消费者。
 2. 创建或配置专用应用：`lark-cli config init --new --name datamining-bot`。
    Ubuntu 要绑定到同一个应用，不能再创建第二个机器人；可使用
    `lark-cli config init --name datamining-bot --app-id <已有AppID> --app-secret-stdin`，

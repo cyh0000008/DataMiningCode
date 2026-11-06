@@ -9,6 +9,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import sys
 import time
 from collections import deque
 from pathlib import Path
@@ -20,6 +21,7 @@ from .paths import user_data_dir
 from .feishu_outbox import claim_delivery, finish_delivery, enqueue_bundle
 from .remote_control import RemoteController, HELP
 from .remote_cards import RemoteCards, card_event_time, normalize_card_event
+from .lark_cli import resolve_linux_cli
 
 
 PROFILE = "datamining-bot"
@@ -27,6 +29,8 @@ PROFILE = "datamining-bot"
 
 def cli_command() -> list[str]:
     """Use argv, never shell=True (including the Windows npm launcher)."""
+    if sys.platform.startswith("linux"):
+        return [resolve_linux_cli()]
     override = os.environ.get("MINING_LARK_CLI", "")
     if override:
         return [override]
