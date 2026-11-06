@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List
 import warnings
+from datetime import datetime
+import re
 
 
 JOB_KIND_J6B = "j6b"
@@ -40,6 +42,63 @@ def _from_dict(cls, data: Dict[str, Any]):
     known = {f: data.get(f, getattr(defaults, f)) for f in cls.__dataclass_fields__}
     known["powertrain_type"] = normalize_powertrain_type(known["powertrain_type"])
     return cls(**known)
+
+
+def validate_job_spec(spec: "J6BJobSpec | MMTJobSpec", *, require_complete: bool = False) -> None:
+    """Validate task parameters before either desktop or remote config generation."""
+    defaults = type(spec)()
+    for name, value in spec.to_dict().items():
+        default = getattr(defaults, name)
+        if isinstance(default, bool):
+            valid = type(value) is bool
+        elif isinstance(default, int):
+            valid = type(value) is int
+        elif isinstance(default, list):
+            valid = isinstance(value, list) and all(isinstance(item, str) for item in value)
+        else:
+            valid = isinstance(value, str)
+        if not valid:
+            raise ValueError(f"参数 {name} 类型不正确")
+    normalize_powertrain_type(spec.powertrain_type)
+    report_name = spec.report_name if isinstance(spec, J6BJobSpec) else spec.report_prefix
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', report_name):
+        raise ValueError("报告名称不能包含路径或非法文件名字符")
+    date = spec.date_range if isinstance(spec, J6BJobSpec) else spec.query_date
+    if date:
+        match = re.fullmatch(r"(20\d{6})(?:[-~](20\d{6}))?", date)
+        if match is None:
+            raise ValueError("日期请使用 YYYYMMDD 或 YYYYMMDD-YYYYMMDD")
+        start, end = match[1], match[2] or match[1]
+        datetime.strptime(start, "%Y%m%d")
+        datetime.strptime(end, "%Y%m%d")
+        if start > end:
+            raise ValueError("日期开始不能晚于结束")
+    if isinstance(spec, J6BJobSpec):
+        if spec.metric_signal_scope not in ("all", "debugcan_only", "pcan_ccan_only"):
+            raise ValueError("信号范围必须为 all、debugcan_only 或 pcan_ccan_only")
+        metrics = [part.strip() for part in spec.enabled_metrics.split(",")]
+        if not all(re.fullmatch(r"[A-Za-z_]\w*", part) for part in metrics):
+            raise ValueError("启用指标必须为 all 或逗号分隔的指标名称")
+        if "all" in metrics and metrics != ["all"]:
+            raise ValueError("all 不能与单项指标混用")
+    else:
+        if not 0 <= spec.max_depth <= 20:
+            raise ValueError("扫描深度必须在 0～20 之间")
+        if spec.resume_mode not in ("auto", "never"):
+            raise ValueError("续跑模式必须为 auto 或 never")
+        if not spec.enable_can_pipeline and not spec.enable_topic_pipeline:
+            raise ValueError("至少启用 CAN 或 Topic 流水线")
+        if not spec.file_pattern or any(char in spec.file_pattern for char in "/\\"):
+            raise ValueError("文件匹配只能填写文件名模式，不能包含路径")
+        if not spec.suffix or any(char in spec.suffix for char in "/\\"):
+            raise ValueError("目录后缀不能为空或包含路径")
+    if require_complete:
+        source = spec.input_paths if isinstance(spec, J6BJobSpec) else spec.source_path
+        if not source:
+            raise ValueError("输入目录不能为空")
+        if not isinstance(spec, MMTJobSpec) or not spec.dry_run:
+            if not all((spec.vehicle.strip(), spec.software_version.strip(), date)):
+                raise ValueError("运行前请填写车型、报告软件版本和日期")
 
 
 @dataclass

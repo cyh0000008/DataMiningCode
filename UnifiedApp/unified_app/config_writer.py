@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any, List, Union
 
-from .job_spec import J6BJobSpec, MMTJobSpec, normalize_powertrain_type
+from .job_spec import J6BJobSpec, MMTJobSpec, normalize_powertrain_type, validate_job_spec
 
 
 def _abs(base_dir: Path, value: str) -> str:
@@ -48,6 +48,7 @@ def _write_temp_json(data: dict, prefix: str) -> Path:
 
 
 def prepare_j6b_config(template_path: Path, spec: J6BJobSpec) -> Path:
+    validate_job_spec(spec)
     template_path = template_path.resolve()
     template_dir = template_path.parent
     data = _load_template(template_path)
@@ -83,6 +84,7 @@ def prepare_j6b_config(template_path: Path, spec: J6BJobSpec) -> Path:
 
 
 def prepare_mmt_config(template_path: Path, spec: MMTJobSpec) -> Path:
+    validate_job_spec(spec)
     template_path = template_path.resolve()
     template_dir = template_path.parent
     data = _load_template(template_path)

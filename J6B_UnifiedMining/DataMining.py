@@ -189,6 +189,15 @@ def main(argv: List[str]) -> int:
     else:
         print("LCC sync check deferred to task queue." if config.get("lcc_sync_check", True)
               else "LCC sync check disabled.")
+    try:
+        repo_root = str(Path(__file__).resolve().parent.parent)
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        from UnifiedApp.unified_app.feishu_outbox import enqueue_mining_results
+        if enqueue_mining_results("j6b", report_path, bad_case_report_path):
+            print("[飞书] 挖掘结果已加入持久回传队列。", flush=True)
+    except Exception as exc:
+        print("[飞书] 结果回传排队失败，本地报告保留：%s" % exc, flush=True)
     return 0
 
 

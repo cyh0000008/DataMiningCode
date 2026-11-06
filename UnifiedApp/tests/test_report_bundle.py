@@ -120,6 +120,8 @@ class ReportBundleTests(unittest.TestCase):
                     expected = {"bad_case_report.xlsx"}
                     if auto_compare:
                         expected.add("comparison.xlsx")
+                    else:
+                        expected.add("summary.xlsx")
                     with ZipFile(source.bundle_path) as bundle:
                         self.assertEqual(set(bundle.namelist()), expected)
                         self.assertIsNone(bundle.testzip())
@@ -179,16 +181,19 @@ class ReportBundleTests(unittest.TestCase):
                     sync_source_job_id=source.id,
                 )
                 manager._finish_sync_dependency(comparison)
-                self.assertIsNone(source.bundle_path)
-                self.assertTrue(source.bundle_error)
+                self.assertIsNotNone(source.bundle_path)
+                self.assertFalse(source.bundle_error)
+                with ZipFile(source.bundle_path) as bundle:
+                    self.assertEqual(bundle.namelist(), ["bad.xlsx"])
                 panel = JobPanel(manager)
                 panel._on_job_added(source.id)
                 panel._on_job_updated(source.id)
                 row = panel._row_by_job[source.id]
-                self.assertIn("打包失败", panel.table.item(row, COL_STATUS).text())
+                self.assertNotIn("打包失败", panel.table.item(row, COL_STATUS).text())
                 panel.deleteLater()
             comparison.status = STATUS_SUCCESS
             comparison.report_path = comparison_path
+            source.bundle_path = None
             source.pending_sync = True
             with patch.object(manager, "_submit_sync") as sync:
                 sync.side_effect = lambda job: self.assertTrue(job.bundle_path.is_file())
@@ -238,7 +243,7 @@ class ReportBundleTests(unittest.TestCase):
                  patch.object(manager, "_try_start_next"):
                 manager._on_finished(job_id, 0, None)
             self.assertIsNone(job.bundle_path)
-            self.assertIn("未成功提交", job.bundle_error)
+            self.assertIn("没有可打包", job.bundle_error)
             self.assertEqual(list(work.glob("*.zip")), [])
 
 

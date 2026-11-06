@@ -1115,6 +1115,16 @@ def run_all(
         print(f"统一统计报告：{report_path}")
     if bad_case_report_path:
         print(f"Bad Case 提取报告：{bad_case_report_path}")
+    if report_path:
+        try:
+            repo_root = str(Path(__file__).resolve().parent.parent)
+            if repo_root not in sys.path:
+                sys.path.insert(0, repo_root)
+            from UnifiedApp.unified_app.feishu_outbox import enqueue_mining_results
+            if enqueue_mining_results("mmt", report_path, bad_case_report_path):
+                print("[飞书] 挖掘结果已加入持久回传队列。", flush=True)
+        except Exception as exc:
+            print(f"[飞书] 结果回传排队失败，本地报告保留：{exc}", flush=True)
     return 0
 
 

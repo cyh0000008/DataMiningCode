@@ -33,6 +33,7 @@ from .job_spec import (
 from .paths import AppSettings
 from .progress_parser import parse_line
 from .report_archive import archive_report, bundle_reports
+from .feishu_outbox import enqueue_bundle
 
 
 STATUS_QUEUED = "排队中"
@@ -92,6 +93,7 @@ class JobManager(QObject):
     job_updated = Signal(str)
     job_log = Signal(str, str)
     job_finished = Signal(str)
+    bundle_ready = Signal(str)
 
     def __init__(self, max_concurrent: int = 3, parent=None) -> None:
         super().__init__(parent)
@@ -356,6 +358,7 @@ class JobManager(QObject):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONUNBUFFERED", "1")
         env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("UNIFIED_MINING_MANAGED", "1")
         process.setProcessEnvironment(env)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
 
@@ -481,6 +484,7 @@ class JobManager(QObject):
                     self._bundle_reports(job)
                 else:
                     self._bundle_failed(job, "自动对比未成功提交，未生成完整报告 ZIP。")
+                    self._bundle_reports(job)
             if job.pending_sync and compare_id is None:
                 self._submit_sync(job)
         elif job.pending_sync:
@@ -521,6 +525,7 @@ class JobManager(QObject):
                     self._bundle_reports(source, job)
                 else:
                     self._bundle_failed(source, "自动对比失败或取消，未生成完整报告 ZIP。")
+                    self._bundle_reports(source)
             if not source.pending_sync:
                 return
             if job.status == STATUS_CANCELED:
@@ -556,8 +561,11 @@ class JobManager(QObject):
         if comparison is not None:
             if comparison.report_path is None:
                 self._bundle_failed(source, "未捕获本次对比报告路径。")
+                self._bundle_reports(source)
                 return
             reports.append(comparison.report_path)
+        elif source.report_path is not None:
+            reports.append(source.report_path)
         if source.bad_case_report_path is not None:
             reports.append(source.bad_case_report_path)
         else:
@@ -574,10 +582,21 @@ class JobManager(QObject):
         source.bundle_error = ""
         message = f"[报告打包] 已生成：{source.bundle_path}"
         if comparison is None:
-            message += "（未启用自动对比，仅包含本次 Bad Case Excel）"
+            message += "（未生成对比报告，回传本次原始报告及可用的 Bad Case Excel）"
         source.log_lines.append(message)
         self.job_log.emit(source.id, message)
         self.job_updated.emit(source.id)
+
+        try:
+            if enqueue_bundle(source.bundle_path, source.title, source.id):
+                message = "[飞书] 结果包已加入本机持久回传队列。"
+                source.log_lines.append(message)
+                self.job_log.emit(source.id, message)
+        except Exception as exc:
+            message = "[飞书] 结果回传排队失败，本地 ZIP 保留：" + str(exc)
+            source.log_lines.append(message)
+            self.job_log.emit(source.id, message)
+        self.bundle_ready.emit(source.id)
 
     def _archive_report(self, job: Job) -> None:
         options = job.report_archive
