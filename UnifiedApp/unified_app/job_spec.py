@@ -154,6 +154,7 @@ class MMTJobSpec:
     enable_topic_pipeline: bool = True
     resume_mode: str = "auto"
     dry_run: bool = False
+    bad_case_signal_plots: bool = True
     auto_compare: bool = False
     compare_base_path: str = ""
     compare_details_sheet: bool = False

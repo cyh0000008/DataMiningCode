@@ -210,6 +210,13 @@ class RemoteControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "未知指标"):
             self.controller.handle("运行草稿")
 
+    def test_mmt_signal_plot_option_reaches_job(self):
+        self.create_draft("MMT")
+        self.controller.handle("修改 信号图=开启")
+        self.controller.handle("运行草稿")
+        self.confirm("运行")
+        self.assertTrue(self.manager.submit_mmt.call_args.args[3].bad_case_signal_plots)
+
     def test_parameter_whitelist_types_and_presets_names(self):
         self.create_draft()
         for text in ("修改 python=evil", "修改 模板配置=evil", "修改 CAN流水线=maybe",

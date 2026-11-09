@@ -7,6 +7,7 @@
   "suffix": "_done",
   "output_dir": "/home/patac_data/DataMining_Longitudinal/DataMiningResult/MMT_Result/C1UL_0813_before",
   "report_prefix": "Unified_Longitudinal_Report",
+  "bad_case_signal_plots": true,
   "file_pattern": "*.h5",
   "pipelines": [
     {

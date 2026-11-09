@@ -126,6 +126,7 @@ class UnifiedConfig:
     output_dir: Path
     report_prefix: str
     pipelines: list[PipelineConfig]
+    bad_case_signal_plots: bool = True
 
 
 @dataclass
@@ -319,6 +320,9 @@ def load_config(config_file_path: str | Path) -> UnifiedConfig:
     max_depth = int(raw["max_depth"])
     if max_depth < 0:
         raise ValueError("max_depth must be >= 0")
+    bad_case_signal_plots = raw.get("bad_case_signal_plots", True)
+    if type(bad_case_signal_plots) is not bool:
+        raise ValueError("bad_case_signal_plots must be a boolean")
 
     output_dir = resolve_path(raw["output_dir"], base_dir)
     raw["powertrain_type"] = powertrain_type
@@ -336,6 +340,7 @@ def load_config(config_file_path: str | Path) -> UnifiedConfig:
         output_dir=output_dir,
         report_prefix=str(raw["report_prefix"]),
         pipelines=enabled_pipelines,
+        bad_case_signal_plots=bad_case_signal_plots,
     )
 
 
@@ -1106,6 +1111,8 @@ def run_all(
         output_dir=config.output_dir,
         run_timestamp=run_timestamp,
         extract_config=bad_case_extract_config,
+        plot_loader=(make_plot_loader(config, metrics_by_pipeline, eligible_folders)
+                     if config.bad_case_signal_plots else None),
     )
     finalize_run_state(run_state, expected_task_keys)
     elapsed = time.time() - start_time
@@ -1133,6 +1140,50 @@ def ensure_sys_path(base_dir: Path) -> None:
         text = str(path)
         if text not in sys.path:
             sys.path.insert(0, text)
+
+
+def make_plot_loader(config: UnifiedConfig, metrics_by_pipeline: dict[str, list[MetricModule]],
+                     folders: list[str]) -> Callable:
+    from bad_case_signal_plots import can_series, topic_series
+
+    pipelines = {pipeline.name: pipeline for pipeline in config.pipelines}
+    folder_indices = {folder: index for index, folder in enumerate(folders, 1)}
+
+    def load(row: dict[str, Any]) -> tuple[list, list[str]]:
+        pipeline = pipelines[row["pipeline_name"]]
+        folder = row["folder_path"]
+        if folder not in folder_indices:
+            raise ValueError("Bad Case 目录不在本次挖掘列表中")
+        next_folder = find_next_folder_for_pipeline(pipeline, folders, folder_indices[folder])
+        metric = next((item for item in metrics_by_pipeline[pipeline.name]
+                       if item.name == row["metric_name"]), None)
+        if metric is None:
+            raise ValueError("Bad Case 指标不在本次挖掘列表中")
+        row["pipeline_type"] = pipeline.type
+        if pipeline.type == PIPELINE_CAN:
+            context = build_can_folder_context(
+                folder, pipeline.file_pattern, pipeline.preprocess_signals,
+                next_folder_path=next_folder,
+                cross_done_max_gap_seconds=pipeline.cross_done_max_gap_seconds,
+                cross_done_context_seconds=pipeline.cross_done_context_seconds,
+            )
+            origin = calculate_h5_start_timestamp(context["primary_h5_file"])
+            if origin is None:
+                raise ValueError("无法确定原始 CAN 时间起点")
+            return can_series(context["session"], list(getattr(metric.module, "REQUIRED_SIGNALS", [])), origin)
+        frames = load_topic_frames_cached(folder)
+        timestamps = [extract_frame_timestamp_ms(frame) for frame in frames]
+        valid = [timestamp for timestamp in timestamps if timestamp is not None]
+        if not valid:
+            raise ValueError("Topic 没有有效时间戳")
+        origin = min(valid) / 1000.0
+        if (next_folder and metric_matches_cross_done(
+                metric, normalize_cross_done_names(pipeline.cross_done_metric_names))):
+            frames = build_two_done_frames(frames, folder, load_topic_frames_cached(next_folder),
+                                          next_folder, pipeline.cross_done_context_seconds)
+        return topic_series(frames, origin)
+
+    return load
 
 
 def find_next_folder_for_pipeline(
@@ -2396,6 +2447,7 @@ def generate_bad_case_extract_report(
     output_dir: Path,
     run_timestamp: str,
     extract_config: BadCaseExtractConfig,
+    plot_loader: Callable | None = None,
 ) -> Path | None:
     if not extract_config.enabled:
         print("Bad Case 提取已禁用，跳过 Bad Case 报告生成")
@@ -2523,6 +2575,10 @@ def generate_bad_case_extract_report(
         ws.column_dimensions[column].width = width
 
     ws.freeze_panes = "A2"
+    if plot_loader is not None:
+        from bad_case_signal_plots import embed_plots
+        embed_plots(ws, report_rows, plot_loader,
+                    output_file.parent / (output_file.stem + "_signal_plots"))
     ws.auto_filter.ref = ws.dimensions
     workbook.save(output_file)
     print(f"Bad Case 提取报告已生成：{output_file}")

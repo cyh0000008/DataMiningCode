@@ -13,6 +13,42 @@ All 12 driving-uninterfered-acceleration metrics are excluded from Bad Case
 extraction reports, regardless of extraction rules. Their calculations, CSV
 outputs, summary statistics and comparison reports remain unchanged.
 
+## Bad Case signal plots
+
+Signal plots default to enabled (`"bad_case_signal_plots": true`), including
+configs or presets without this field. Set it to `false` or disable **signal plots**
+in the unified app's MMT form to opt out. Explicitly disabled presets stay disabled.
+The option is saved in
+presets and is also available as `信号图` in the Feishu advanced parameters.
+The MMT Python environment needs Pillow in addition to the existing numpy,
+h5py and openpyxl dependencies. Dry runs and disabled Bad Case extraction
+do not draw plots.
+
+The existing `bad_case_report_<timestamp>.xlsx` gains image and plotting-status
+columns. Each selected **metric/folder** row contains an embedded signal
+overview, not an individual event or threshold-evidence plot: the source CSV
+can aggregate multiple events into one row. CAN plots show available core
+signals and the metric's required signals, including sustained jerk computed
+with the mining algorithm. Explicit CAN `[Event start/end]` intervals in
+relative seconds are shaded; other event timestamps are not guessed.
+Topic plots use the same comprehensive-frame preprocessing as mining, showing
+speed, wheel/slope/total acceleration, total sustained jerk, ACC/override,
+curvature control and front-target signals where available. Planning/geometric
+following candidates are shown separately, with target IDs.
+
+Plots reuse the pipeline's H5 selection, next-folder eligibility and continuation
+window. CAN time is relative to the primary H5 start; Topic time is relative to
+the primary folder's first UNP timestamp. Missing signals or insufficient
+samples are identified in the status column. A missing/unreadable source or
+other plotting error is logged and recorded in the affected row; it does not
+become an empty success image or discard the other report rows.
+
+Full-size PNGs remain in `<report-stem>_signal_plots` next to the report.
+Embedded images remain viewable when the XLSX is copied or included in the
+existing result ZIP/Feishu delivery; separate PNGs and raw data are not added
+to the ZIP. Plotting increases runtime and report size. Existing reports are
+not modified automatically; rerun mining with plotting enabled.
+
 ## Driver override truncates scenes
 
 All topic scene CPIs (curve, follow start, follow stop including its stable

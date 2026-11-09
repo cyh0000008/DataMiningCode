@@ -90,6 +90,7 @@ def prepare_mmt_config(template_path: Path, spec: MMTJobSpec) -> Path:
     data = _load_template(template_path)
 
     data["powertrain_type"] = normalize_powertrain_type(spec.powertrain_type)
+    data["bad_case_signal_plots"] = spec.bad_case_signal_plots
     if spec.source_path.strip():
         data["source_path"] = spec.source_path.strip()
     data["query_date"] = spec.query_date.strip()

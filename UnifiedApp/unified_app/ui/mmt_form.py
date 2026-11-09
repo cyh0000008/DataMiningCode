@@ -133,6 +133,10 @@ class MMTForm(QWidget):
         )
         form.addRow("续跑模式：", self.resume_combo)
 
+        self.bad_case_signal_plots_check = QCheckBox("挖掘后为 Bad Case 报告生成信号图（增加耗时及文件体积）")
+        self.bad_case_signal_plots_check.setChecked(MMTJobSpec().bad_case_signal_plots)
+        form.addRow("信号图：", self.bad_case_signal_plots_check)
+
         self.dry_run_checkbox = QCheckBox("仅校验配置，不扫描数据（dry-run）")
         self.dry_run_checkbox.setToolTip("dry-run 不会生成报告文件，即使勾选了自动对比也会被跳过")
         form.addRow("", self.dry_run_checkbox)
@@ -234,6 +238,7 @@ class MMTForm(QWidget):
             enable_topic_pipeline=self.topic_checkbox.isChecked(),
             resume_mode=self.resume_combo.currentText(),
             dry_run=self.dry_run_checkbox.isChecked(),
+            bad_case_signal_plots=self.bad_case_signal_plots_check.isChecked(),
             auto_compare=self.auto_compare_check.isChecked(),
             compare_base_path=self.compare_base_edit.text().strip(),
             compare_details_sheet=self.compare_details_check.isChecked(),
@@ -263,6 +268,7 @@ class MMTForm(QWidget):
         if index >= 0:
             self.resume_combo.setCurrentIndex(index)
         self.dry_run_checkbox.setChecked(spec.dry_run)
+        self.bad_case_signal_plots_check.setChecked(spec.bad_case_signal_plots)
         self.auto_compare_check.setChecked(spec.auto_compare)
         self.compare_base_edit.setText(spec.compare_base_path)
         self.compare_details_check.setChecked(spec.compare_details_sheet)

@@ -32,7 +32,8 @@ FIELDS = {
             "数据软件筛选": "query_software", "软件筛选": "query_software",
             "扫描深度": "max_depth", "目录后缀": "suffix", "报告名称": "report_prefix",
             "文件匹配": "file_pattern", "CAN流水线": "enable_can_pipeline",
-            "Topic流水线": "enable_topic_pipeline", "续跑模式": "resume_mode", "试运行": "dry_run"},
+            "Topic流水线": "enable_topic_pipeline", "续跑模式": "resume_mode", "试运行": "dry_run",
+            "信号图": "bad_case_signal_plots"},
 }
 HELP = (
     "飞书挖掘操作台\n"
