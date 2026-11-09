@@ -499,9 +499,9 @@ DERIVED_DEPENDENCIES: Dict[str, Tuple[str, ...]] = {
     "tcs_active": ("tcs_active_primary", "tcs_active_ice2"),
     "vse_active": ("vse_active_primary", "vse_active_ice2"),
     "curv_enable_flag": ("curv_enable",),
-    "front_valid": ("front_target_id", "front_range", "front_lat_range", "flt1_cutin_flag"),
+    "front_valid": ("front_target_id", "front_range", "flt1_cutin_flag"),
     "front_closing_speed": ("ego_speed", "front_velocity_abs"),
-    "front_ttc": ("front_target_id", "front_range", "front_lat_range", "front_velocity_abs", "ego_speed", "flt1_cutin_flag"),
+    "front_ttc": ("front_target_id", "front_range", "front_velocity_abs", "ego_speed", "flt1_cutin_flag"),
     "cutin_valid": ("front_target_id", "front_range", "flt1_cutin_flag"),
     "cutin_target_id": ("front_target_id", "front_range", "flt1_cutin_flag"),
     "cutin_range_x": ("front_target_id", "front_range", "flt1_cutin_flag"),
@@ -622,7 +622,7 @@ def _add_derived_fields(
         cutin_flag_default = float(defaults.get("flt1_cutin_flag_default", 0.0))
         fields["flt1_cutin_flag"] = np.full(n, cutin_flag_default, dtype=float)
 
-    flt1_core_fields = ("front_target_id", "front_range", "front_lat_range", "front_velocity_abs")
+    flt1_core_fields = ("front_target_id", "front_range", "front_velocity_abs")
     if any(name not in fields for name in flt1_core_fields):
         fields["front_target_id"] = np.zeros(n, dtype=float)
         fields["front_range"] = np.full(n, np.inf, dtype=float)
@@ -635,14 +635,10 @@ def _add_derived_fields(
     if all(name in fields for name in ("front_target_id", "front_range", "flt1_cutin_flag")):
         target_id = _float_col(fields, "front_target_id", np.zeros(n, dtype=float))
         front_range = _float_col(fields, "front_range", np.full(n, np.inf, dtype=float))
-        front_lat_range = _float_col(fields, "front_lat_range", np.full(n, np.inf, dtype=float))
         flt1_cutin_flag = _float_col(fields, "flt1_cutin_flag", np.zeros(n, dtype=float))
         base_flt1_valid = np.logical_and(target_id != 0.0, np.isfinite(front_range))
         base_flt1_valid = np.logical_and(base_flt1_valid, front_range > 0.0)
-        front_lateral_valid = np.logical_and(np.isfinite(front_lat_range), np.abs(front_lat_range) <= 2.0)
-        fields["front_valid"] = np.logical_and.reduce(
-            [base_flt1_valid, front_lateral_valid, np.isclose(flt1_cutin_flag, 0.0)]
-        )
+        fields["front_valid"] = np.logical_and(base_flt1_valid, np.isclose(flt1_cutin_flag, 0.0))
         fields["cutin_valid"] = np.logical_and(base_flt1_valid, np.isclose(flt1_cutin_flag, 1.0))
         fields["cutin_target_id"] = np.where(fields["cutin_valid"], target_id, 0.0)
         fields["cutin_range_x"] = np.where(fields["cutin_valid"], front_range, np.inf)

@@ -6,6 +6,64 @@ import unittest
 
 
 class CutinTtcTests(unittest.TestCase):
+    def test_front_validity_and_ttc_do_not_depend_on_lateral_range(self):
+        result = subprocess.run(
+            [sys.executable, "-c", r'''
+from pathlib import Path
+import tempfile
+import h5py
+import numpy as np
+from signal_preprocessor import build_signal_frame, raw_dependencies_for_field
+from metric_utils import distant_front_clear_mask
+from filters import _driving_uninterfered_accel as uninterfered
+
+for field in ("front_valid", "front_ttc"):
+    assert "front_lat_range" not in raw_dependencies_for_field(field)
+assert "front_lat_range" not in uninterfered.REQUIRED_FIELDS
+assert "front_lat_range" not in uninterfered.REQUIRED_PATHS
+with tempfile.TemporaryDirectory() as folder:
+    path = Path(folder) / "targets.h5"
+    values = {
+        "acceleration": np.zeros(7),
+        "ego_speed": np.full(7, 36.),
+        "front_velocity_abs": np.full(7, 5.),
+        "front_target_id": np.array([1., 1., 1., 0., 1., 1., 1.]),
+        "front_range": np.array([40., 40., 40., 40., 0., np.nan, 40.]),
+        "flt1_cutin_flag": np.array([0., 0., 0., 0., 0., 0., 1.]),
+    }
+    with h5py.File(path, "w") as h5:
+        h5.create_group("metadata")
+        sample = h5.create_group("sample")
+        sample.create_dataset("timestamp", data=np.arange(7, dtype=float))
+        signals = sample.create_group("signals")
+        for key, value in values.items():
+            signals.create_dataset(key, data=value)
+    config = {"signals": {key: "sample/signals/" + key for key in values}}
+    # Missing, large, non-finite and boundary lateral ranges all give identical targets.
+    for lateral in (None, [-3., 3., np.nan, 0., 0., 0., 10.],
+                    [-2., 2., np.inf, 0., 0., 0., -10.]):
+        if lateral is not None:
+            with h5py.File(path, "r+") as h5:
+                if "sample/signals/front_lat_range" in h5:
+                    del h5["sample/signals/front_lat_range"]
+                h5.create_dataset("sample/signals/front_lat_range", data=lateral)
+        config["signals"]["front_lat_range"] = "sample/signals/front_lat_range"
+        frame = build_signal_frame(path, config)
+        np.testing.assert_array_equal(frame.col("front_valid"),
+                                      [True, True, True, False, False, False, False])
+        np.testing.assert_array_equal(frame.col("cutin_valid"),
+                                      [False, False, False, False, False, False, True])
+        np.testing.assert_allclose(frame.col("front_ttc")[:3], [8., 8., 8.])
+        assert frame.col("cutin_ttc_calc")[-1] == 8.
+        assert not distant_front_clear_mask(frame)[:3].any()
+        assert not frame.missing_signal_details(("front_valid", "front_ttc"))
+'''],
+            cwd=Path(__file__).resolve().parents[2] / "J6B_UnifiedMining",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_scenes_same_target_measurements_and_plots(self):
         result = subprocess.run(
             [sys.executable, "-c", r'''

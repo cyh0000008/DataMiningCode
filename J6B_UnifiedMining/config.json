@@ -229,7 +229,7 @@
     "acc_active": "The framework reads acc_active from CAN_PB 0x376 IACCAct376 and derives acc_active_flag from it. ch3 is preferred; ch4/ch2 are fallback paths when the preferred channel is absent.",
     "chassis_active": "ABS/TCS/VSE active states are read from CAN_PB 0x0AC primary signals and CAN_PB 0x0AE ICE2 signals. Preprocessing builds final abs_active/tcs_active/vse_active by using any valid active value from either source. ch3 is preferred for primary signals; ch4/ch2/ch1 are fallback paths.",
     "slope_deg": "Debug_single_Reserved_51 is road slope in deg. slope_acc = 9.80665 * sin(slope_deg), only used by slope_no_frnt_* metrics.",
-    "front_target": "FLT1 is used for both follow and cut-in target. FLT1_CUTIN_Flag=0 means follow target, and FLT1_CUTIN_Flag=1 means cut-in target. Follow target validity also requires abs(FLT1_Lat_Range) <= 2m.",
+    "front_target": "FLT1 is used for both follow and cut-in target. FLT1_CUTIN_Flag=0 means follow target, and FLT1_CUTIN_Flag=1 means cut-in target. Both require a nonzero target ID and a finite positive longitudinal range. Lateral range is not used for target validity.",
     "odometer": "Distance is calculated as last valid IVehOdo minus first valid IVehOdo per H5 file, corrected by odometer_rollover when needed."
   }
 }

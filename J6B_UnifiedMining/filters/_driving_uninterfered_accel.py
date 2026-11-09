@@ -41,7 +41,6 @@ REQUIRED_FIELDS = (
     "pedal_override",
     "front_target_id",
     "front_range",
-    "front_lat_range",
     "flt1_cutin_flag",
     "curv_enable",
     "curv_speed_limit",
@@ -60,7 +59,6 @@ REQUIRED_PATHS = (
     "pedal_override",
     "front_target_id",
     "front_range",
-    "front_lat_range",
     "flt1_cutin_flag",
     "curv_enable",
     "curv_speed_limit",
@@ -174,7 +172,6 @@ def _extract_observations(frame: SignalFrame) -> list[dict[str, Any]]:
     override_raw = frame.col("pedal_override").astype(float)
     target_id = frame.col("front_target_id").astype(float)
     front_range = frame.col("front_range").astype(float)
-    front_lat_range = frame.col("front_lat_range").astype(float)
     cutin = frame.col("flt1_cutin_flag").astype(float)
     curv_enabled = frame.col("curv_enable").astype(float) != 0.0
     curv_limit_mps = frame.col("curv_speed_limit").astype(float)
@@ -190,7 +187,6 @@ def _extract_observations(frame: SignalFrame) -> list[dict[str, Any]]:
             np.isfinite(override_raw),
             np.isfinite(target_id),
             np.logical_or(target_id == 0.0, np.logical_and(np.isfinite(front_range), front_range > 0.0)),
-            np.isfinite(front_lat_range),
             np.isfinite(cutin),
             np.isfinite(frame.col("curv_enable").astype(float)),
             np.logical_or(np.logical_not(curv_enabled), np.isfinite(curv_limit_mps)),
