@@ -44,10 +44,6 @@
         "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrqV",
         "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVl",
         "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVlV",
-        "APA_Brake_Propulsion_Torqu_1F0_M.IAPABT_APAType",
-        "PPEI_Trans_General_Status_2_ECP_H1_0D7_M.ISuprRmtPrkPrplSysResp",
-        "Advanced_Park_Assist_Status_190_M.IAPASP_APAStsAuth",
-        "PPEI_Chassis_General_Data_3_0AC_M.IABSAtv",
         "PPEI_Chassis_General_Data_3_0AC_M.ITCSysAtv",
         "PPEI_Chassis_General_Data_3_0AC_M.IVSEAct"
       ]

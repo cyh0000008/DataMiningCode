@@ -4,9 +4,12 @@ import os
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable
+from typing import TYPE_CHECKING, Callable, Dict, Iterable
 
 import h5py
+
+if TYPE_CHECKING:
+    from can_unp_gate import UnpActiveGate
 
 
 SignalRecord = Dict[str, object]
@@ -38,6 +41,7 @@ class FolderSession:
         self.h5_files = [self.primary_h5_file] + [str(path) for path in additional_h5_files or []]
         self.context_end_timestamp = None if context_end_timestamp is None else float(context_end_timestamp)
         self.preprocess_signals = list(preprocess_signals or [])
+        self.unp_active_gate: UnpActiveGate | None = None
         file_end_timestamps = [None] + [
             self.context_end_timestamp for _path in (additional_h5_files or [])
         ]
@@ -110,7 +114,7 @@ class FolderSession:
         )
         cached = _cache_get(self._sample_cache, cache_key)
         if cached is not None:
-            return cached
+            return self._gate_acc_values(signal_name, target_timestamps, cached)
 
         if start_timestamp is None or end_timestamp is None:
             signal = self.store.get_signal(signal_name)
@@ -121,7 +125,16 @@ class FolderSession:
 
         sampled = sample_signal(source_timestamps, source_values, target_timestamps, method=method)
         _cache_set(self._sample_cache, cache_key, sampled, self._sample_cache_size)
-        return sampled
+        return self._gate_acc_values(signal_name, target_timestamps, sampled)
+
+    def _gate_acc_values(self, signal_name: str, timestamps: list[float],
+                         values: list[object]) -> list[object]:
+        # Keep raw slices/cache unchanged; only ACC activation consumers receive the combined gate.
+        if self.unp_active_gate is not None:
+            from can_unp_gate import ACC_ACTIVE_SIGNALS
+            if signal_name in ACC_ACTIVE_SIGNALS:
+                return self.unp_active_gate.apply(timestamps, values)
+        return values
 
 
     def _preload_configured_signals(self) -> None:

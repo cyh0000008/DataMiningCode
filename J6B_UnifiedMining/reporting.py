@@ -10,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from metric_utils import MetricResult
-from metric_display_names import metric_display_name
+from metric_display_names import is_retired_metric, metric_display_name
 
 
 CSV_HEADERS = [
@@ -38,7 +38,7 @@ class StreamingReportWriter:
         report_filename = Path(ensure_xlsx(report_name)).name
         self.output_dir = make_run_output_dir(base_output_dir, Path(report_filename).stem)
         self.report_path = self.output_dir / report_filename
-        metric_list = list(metrics)
+        metric_list = [metric for metric in metrics if not is_retired_metric(metric.name)]
         self.metric_categories = {metric.name: metric.category for metric in metric_list}
         self.metric_modes = {metric.name: metric.result_mode for metric in metric_list}
         self.metric_order = sorted(
@@ -102,6 +102,8 @@ class StreamingReportWriter:
         self.closed = False
 
     def write_result(self, metric_name: str, result: MetricResult) -> None:
+        if is_retired_metric(metric_name):
+            return
         self._write_metric_csv(metric_name, result)
         self._write_metric_json(metric_name, result)
         self._write_metric_sheet(metric_name, result)
@@ -454,7 +456,7 @@ def result_category(results: Iterable[MetricResult]) -> str:
 
 def sorted_results_metric_names(results_by_metric: Mapping[str, List[MetricResult]]) -> List[str]:
     return sorted(
-        results_by_metric,
+        (name for name in results_by_metric if not is_retired_metric(name)),
         key=lambda metric_name: metric_report_sort_key(
             metric_name,
             result_category(results_by_metric[metric_name]),
@@ -469,7 +471,6 @@ def metric_report_sort_key(metric_name: str, category: str) -> tuple[int, str, s
 
 def metric_scene_group(metric_name: str) -> str:
     groups = (
-        "driving_uninterfered_accel",
         "abs",
         "acc",
         "curvature",

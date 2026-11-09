@@ -42,10 +42,13 @@ for chinese in SIGNAL_MAP:
 
 with tempfile.TemporaryDirectory() as folder:
     work = Path(folder)
-    retained = ("follow_stop_min_jerk", "acc_exit_after_abs")
-    excluded = tuple(name for name in METRIC_DISPLAY_NAMES
-                     if name.startswith("driving_uninterfered_accel_"))
-    assert len(excluded) == 12, excluded
+    retained = ("follow_stop_min_jerk", "acc_lost_arbitration")
+    excluded = tuple(
+        f"driving_uninterfered_accel_{measure}_{band}"
+        for measure in ("max_acc", "avg_acc", "accel_build_time")
+        for band in ("0_30", "30_60", "60_90", "90_plus")
+    ) + tuple(f"acc_exit_after_{feature}" for feature in ("abs", "tcs", "vse"))
+    assert not set(excluded).intersection(METRIC_DISPLAY_NAMES)
     names = retained + excluded
     if profile == "J6B":
         from bad_case_report import write_bad_case_report

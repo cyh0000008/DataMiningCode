@@ -15,6 +15,7 @@ from CompareKPI_United.mpi_cpi_compare import (
     build_report,
     convert_comparison_report_to_latest,
     find_comparison_date_groups,
+    remove_retired_metric_rows,
 )
 
 
@@ -22,6 +23,79 @@ ROOT = Path(__file__).resolve().parents[2] / "CompareKPI_United"
 
 
 class ReleaseReportingTests(unittest.TestCase):
+    def test_retired_rows_removed_from_old_templates(self):
+        for profile in ("J6B", "MMT"):
+            wb = Workbook()
+            ws = wb.active
+            ws.cell(6, 2, "重制动")
+            ws.cell(7, 2, "制动跳变导致的实车加速度抖动")
+            ws.cell(8, 2, "泊车顿挫" if profile == "MMT" else "点刹")
+            ws.cell(9, 2, "顿挫")
+            ws.cell(6, 3, "MPI")
+            ws.merge_cells("C6:C9")
+            ws.row_dimensions[9].height = 42
+            remove_retired_metric_rows(ws, profile)
+            self.assertEqual(
+                [ws.cell(row, 2).value for row in range(6, ws.max_row + 1)],
+                ["重制动", "顿挫"] if profile == "MMT" else ["重制动", "点刹", "顿挫"],
+            )
+            self.assertEqual(ws.cell(6, 3).value, "MPI")
+            self.assertIn(f"C6:C{ws.max_row}", {str(area) for area in ws.merged_cells.ranges})
+            self.assertEqual(ws.row_dimensions[ws.max_row].height, 42)
+            remove_retired_metric_rows(ws, profile)
+            self.assertEqual(ws.cell(ws.max_row, 2).value, "顿挫")
+            wb.close()
+
+    def test_old_reports_and_templates_do_not_restore_retired_metrics(self):
+        retired = {
+            "acc_brake_rapid_toggle_decel_jump_count": "制动跳变导致的实车加速度抖动",
+            "apa_gear_switch_jerkiness": "泊车换挡顿挫",
+            "apa_jerkiness": "泊车顿挫",
+            "apa_lost_arbitration": "泊车断握手",
+            "apa_parking_completion_count": "泊车完成",
+            "apa_parking_rollback_count": "泊车溜车",
+            "acc_exit_after_abs": "ABS触发关联ACC退出",
+            "acc_exit_after_tcs": "TCS触发关联ACC退出",
+            "acc_exit_after_vse": "VSE触发关联ACC退出",
+        }
+        retired.update({
+            f"driving_uninterfered_accel_{measure}_{band}": f"{label}（{speed}）"
+            for measure, label in (("max_acc", "最大加速度"), ("avg_acc", "平均加速度"),
+                                   ("accel_build_time", "加速建立时间"))
+            for band, speed in (("0_30", "0-30 km/h"), ("30_60", "30-60 km/h"),
+                                ("60_90", "60-90 km/h"), ("90_plus", ">=90 km/h"))
+        })
+        for profile in ("J6B", "MMT"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as folder:
+                selected = {key: name for key, name in retired.items()
+                            if profile == "MMT" or not key.startswith("apa_")}
+                work = Path(folder)
+                target = work / "CAR_20261026_20261026_V2.xlsx"
+                self._write_input(target, False)
+                wb = load_workbook(target)
+                for key in selected:
+                    wb.active.append(["can", key, "MPI", 100, 1, 1, "100(100/1)", None])
+                wb.save(target)
+                wb.close()
+                template = work / "old_template.xlsx"
+                wb = load_workbook(ROOT / "templates" / f"template_{profile}.xlsx")
+                for name in selected.values():
+                    wb["Sheet1"].append([None, name, "MPI", "old standard"])
+                wb.save(template)
+                wb.close()
+                output = work / "comparison.xlsx"
+                build_report(ROOT, template, output, None, target, True, profile)
+                wb = load_workbook(output)
+                try:
+                    for ws in wb:
+                        values = {cell.value for row in ws for cell in row}
+                        for key, name in selected.items():
+                            self.assertNotIn(key, values)
+                            self.assertNotIn(name, values)
+                    self.assertIn("重制动", {cell.value for row in wb["Sheet1"] for cell in row})
+                finally:
+                    wb.close()
+
     def test_retired_metrics_are_not_loaded_by_mining(self):
         for profile in ("J6B", "MMT"):
             with self.subTest(profile=profile):
@@ -42,7 +116,12 @@ else:
 assert "control_shake_count" not in names, names
 assert "follow_stop_fluct" not in names, names
 assert "abs_activation_count" not in names, names
-assert "acc_exit_after_abs" in names, names
+assert "acc_brake_rapid_toggle_decel_jump_count" not in names, names
+if sys.argv[1] == "MMT":
+    assert not any(name.startswith("apa_") for name in names), names
+assert not any(name.startswith(("acc_exit_after_", "driving_uninterfered_accel_")) for name in names), names
+assert "acc_lost_arbitration" in names, names
+assert "tcs_activation_count" in names and "vse_activation_count" in names, names
 assert "follow_stop_min_jerk" in names, names
 assert "slope_no_frnt_vel_fluct" in names, names
 print("Loaded metrics:", len(names))
@@ -63,15 +142,15 @@ print("Loaded metrics:", len(names))
             "坡道稳速抖动", "坡道控速稳定性", "坡道控速舒适性",
             "跟车刹停最大减速度", "跟车刹停距离", "跟车刹停舒适性",
             "跟车刹停反应", "跟车刹停风险", "跟车起步响应时延", "跟车起步舒适性",
-            "溜车", "无前车稳速未达到SetSpeed", "制动跳变导致的实车加速度抖动",
+            "溜车", "无前车稳速未达到SetSpeed",
             "重制动", "顿挫", "Override后顿挫", "Override后重制动",
             "行车断握手", "进Override后顿挫", "起步顿挫", "不合理低速",
         )
         expected = {
             "J6B": (30, 30, 30, 10, 24, 24, 16, 30, 20, 20, 24, 8, 12,
-                    24, 12, 24, 16, 500, 200, 500, 80, 80, 500, 500, 1000, 500, 320, 100),
+                    24, 12, 24, 16, 500, 200, 80, 80, 500, 500, 1000, 500, 320, 100),
             "MMT": (30, 30, 30, 10, 30, 30, 20, 30, 20, 20, 30, 10, 15,
-                    30, 15, 30, 20, 500, 200, 500, 100, 100, 500, 500, 1000, 500, 400, 100),
+                    30, 15, 30, 20, 500, 200, 100, 100, 500, 500, 1000, 500, 400, 100),
         }
         for powertrain in ("ICE", "PHEV", "BEV"):
             for profile in ("J6B", "MMT"):
@@ -180,9 +259,6 @@ print("Loaded metrics:", len(names))
         ws.append(["can", "acc_torque_jerkiness_count", "MPI", 75, 4, 1,
                    "75.000(75.000/1)", None])
         ws.append(["can", "acc_rollback_count", "MPI", 500, 4, 0, ">500.000(500.000/0)", None])
-        ws.append(["can", "acc_exit_after_abs", "MPI", 800, 4, 0, ">800(800/0)", None])
-        ws.append(["topic", "driving_uninterfered_accel_max_acc_0_30", "CPI",
-                   800, 30, 0, None, "100.0(30/0)"])
         ws.append(["can", "acc_brake_tap_count", "MPI", 80 if base else 79, 4, 1,
                    "80.000(80.000/1)" if base else "79.000(79.000/1)", None])
         ws.append(["can", "control_shake_count", "MPI", 800, 4, 1, "800(800/1)", None])
@@ -230,7 +306,8 @@ print("Loaded metrics:", len(names))
                             ("溜车", 7, "FFFFFF"),
                         ):
                             self.assertEqual(ws.cell(rows[metric], col).fill.fgColor.rgb[-6:], color)
-                        for removed in ("控制抖动", "跟车刹停波动"):
+                        for removed in ("控制抖动", "跟车刹停波动", "制动跳变导致的实车加速度抖动",
+                                        "泊车换挡顿挫", "泊车顿挫", "泊车断握手", "泊车完成", "泊车溜车"):
                             self.assertNotIn(removed, rows)
                         if profile == "J6B":
                             for col, expected in ((10, "可准出"), (12, "不满足准出")):
@@ -249,8 +326,6 @@ print("Loaded metrics:", len(names))
                             ("无前车稳速未达到SetSpeed", 10, "MPI ≥200\n样本不足，无法判定"),
                             ("初段建立时间", 10, "CPI ≥30\n数据缺失或无效，无法判定"),
                             ("溜车", 10, "MPI ≥500\n可准出"),
-                            ("ABS触发关联ACC退出", 10, "未配置准出标准"),
-                            ("最大加速度（0-30 km/h）", 10, "未配置准出标准"),
                         ):
                             result_col = 10 if col == 9 else 12
                             cell = ws.cell(rows[metric], result_col)

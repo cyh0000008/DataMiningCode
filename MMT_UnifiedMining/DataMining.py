@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from powertrain_utils import normalize_powertrain_type
-from metric_display_names import metric_display_name
+from metric_display_names import is_retired_metric, metric_display_name
 
 PIPELINE_CAN = "can"
 PIPELINE_TOPIC = "topic"
@@ -37,11 +37,13 @@ TASK_STATUS_FAILED = "failed"
 TASK_STATUS_SKIPPED_NO_H5 = "skipped_no_h5"
 TASK_STATUS_SKIPPED_EMPTY_TOPIC_FRAMES = "skipped_empty_topic_frames"
 TASK_STATUS_SKIPPED_MISSING_SIGNALS = "skipped_missing_signals"
+TASK_STATUS_SKIPPED_UNP = "skipped_unp_alignment"
 COMPLETED_TASK_STATUSES = {
     TASK_STATUS_SUCCESS,
     TASK_STATUS_SKIPPED_NO_H5,
     TASK_STATUS_SKIPPED_EMPTY_TOPIC_FRAMES,
     TASK_STATUS_SKIPPED_MISSING_SIGNALS,
+    TASK_STATUS_SKIPPED_UNP,
 }
 INCOMPLETE_TASK_STATUSES = {
     TASK_STATUS_RUNNING,
@@ -51,8 +53,6 @@ INCOMPLETE_TASK_STATUSES = {
 ODOMETER_DATASET_NAME = "Vehicle_Odometer"
 ODOMETER_FIELD_NAME = "IVehOdo"
 ODOMETER_VALID_FIELD_NAME = "IVehOdoV"
-APA_CPI_TYPE_SIGNAL = "APA_Brake_Propulsion_Torqu_1F0_M.IAPABT_APAType"
-APA_CPI_STATUS_SIGNAL = "Advanced_Park_Assist_Status_190_M.IAPASP_APAStsAuth"
 DONE_FOLDER_TIME_PATTERN = re.compile(r"^(\d{8})-(\d{6})")
 EVENT_TIME_DETAIL_KEYS = {
     "event_start",
@@ -564,8 +564,6 @@ def get_metric_category(module: object, metric_file_name: str, pipeline: Pipelin
     category = str(getattr(module, "METRIC_CATEGORY", "")).strip().upper()
     if category in {METRIC_CATEGORY_MPI, METRIC_CATEGORY_CPI}:
         return category
-    if pipeline.type == PIPELINE_CAN and Path(metric_file_name).stem.startswith("apa_"):
-        return METRIC_CATEGORY_CPI
     return pipeline.default_metric_category
 
 
@@ -757,6 +755,8 @@ def calculate_metric_code_hash(metrics_by_pipeline: dict[str, list[MetricModule]
         Path(__file__).resolve(),
         base_dir / "signal_lib.py",
         base_dir / "longitudinal_preprocessor.py",
+        base_dir / "can_unp_gate.py",
+        base_dir / "metrics" / "can" / "code" / "acc_unreasonable_low_speed_count.py",
     }
     for metrics in metrics_by_pipeline.values():
         for metric in metrics:
@@ -1170,7 +1170,10 @@ def make_plot_loader(config: UnifiedConfig, metrics_by_pipeline: dict[str, list[
             origin = calculate_h5_start_timestamp(context["primary_h5_file"])
             if origin is None:
                 raise ValueError("无法确定原始 CAN 时间起点")
-            return can_series(context["session"], list(getattr(metric.module, "REQUIRED_SIGNALS", [])), origin)
+            from can_unp_gate import UnpActiveGate, requires_unp
+            gate = UnpActiveGate(context["context_folder_paths"]) if requires_unp(metric.module) else None
+            return can_series(context["session"], list(getattr(metric.module, "REQUIRED_SIGNALS", [])),
+                              origin, unp_gate=gate)
         frames = load_topic_frames_cached(folder)
         timestamps = [extract_frame_timestamp_ms(frame) for frame in frames]
         valid = [timestamp for timestamp in timestamps if timestamp is not None]
@@ -1302,18 +1305,45 @@ def process_can_folder(
     session = folder_context.get("session")
     folder_mileage_km = calculate_folder_mileage_km(folder_context.get("primary_h5_file"))
     segment_start_timestamp = calculate_h5_start_timestamp(folder_context.get("primary_h5_file"))
-    apa_total_count = _safe_int(folder_context.get("apa_total_count", 0))
+    from can_unp_gate import UnpActiveGate, UnpAlignmentError, requires_unp, validate_coverage
+
+    unp_gate = None
+    unp_error = ""
+    if any(requires_unp(metric.module) for metric in pending_metrics):
+        try:
+            unp_gate = UnpActiveGate(folder_context["context_folder_paths"])
+            if session is not None:
+                validate_coverage(unp_gate, session, [metric.module for metric in pending_metrics])
+        except (OSError, ValueError) as exc:
+            unp_error = str(exc)
+            print(f"[{pipeline.name}] ⚠️ 本文件夹 ACC 指标未统计：{unp_error}")
 
     for metric in pending_metrics:
         print(f"[{pipeline.name}]  └── 执行：{metric.file_name}")
         if run_state is not None:
             run_state.start_task(pipeline, folder_path, metric)
+        if requires_unp(metric.module) and unp_error:
+            details = ["未统计：Topic UNP 缺失或无法对齐；" + unp_error]
+            csv_path = save_metric_result(
+                pipeline, metric, folder_path, False, details, {}, 0.0, run_timestamp,
+                segment_start_timestamp=segment_start_timestamp,
+                replace_existing=replace_existing_results,
+            )
+            if run_state is not None:
+                run_state.finish_task(
+                    pipeline, folder_path, metric, TASK_STATUS_SKIPPED_UNP,
+                    csv_path=csv_path, result=False, details=details,
+                )
+            print(f"[{pipeline.name}] ⚠️ {metric.file_name} 跳过：{details[0]}")
+            continue
+        if session is not None:
+            session.unp_active_gate = unp_gate if requires_unp(metric.module) else None
         required_signals = list(getattr(metric.module, "REQUIRED_SIGNALS", []))
         missing_signals = session.missing_signals(required_signals) if session is not None else required_signals
         if missing_signals:
             details = [f"缺少信号: {', '.join(missing_signals)}"]
             statistics = {
-                "All Case Count": apa_total_count if metric.category == METRIC_CATEGORY_CPI else 0,
+                "All Case Count": 0,
                 "Bad Case": 0,
                 "Severity Score": 0.0,
             }
@@ -1344,9 +1374,6 @@ def process_can_folder(
 
         try:
             check_result, check_details, check_statistics = normalize_metric_result(metric.runner(folder_context))
-            if metric.category == METRIC_CATEGORY_CPI:
-                check_statistics = dict(check_statistics or {})
-                check_statistics["All Case Count"] = apa_total_count
             csv_path = save_metric_result(
                 pipeline=pipeline,
                 metric=metric,
@@ -1371,14 +1398,16 @@ def process_can_folder(
                 )
             print(f"[{pipeline.name}]  ✅ {metric.file_name} 完成")
         except Exception as exc:
+            unp_skipped = isinstance(exc, UnpAlignmentError)
+            failure_detail = ("未统计：Topic UNP 缺失或无法对齐；" if unp_skipped else "执行失败: ") + str(exc)
             csv_path = save_metric_result(
                 pipeline=pipeline,
                 metric=metric,
                 folder_path=folder_path,
                 result=False,
-                details=[f"执行失败: {exc}"],
+                details=[failure_detail],
                 statistics={},
-                mileage_km=folder_mileage_km,
+                mileage_km=0.0 if unp_skipped else folder_mileage_km,
                 run_timestamp=run_timestamp,
                 segment_start_timestamp=segment_start_timestamp,
                 replace_existing=replace_existing_results,
@@ -1388,13 +1417,14 @@ def process_can_folder(
                     pipeline=pipeline,
                     folder_path=folder_path,
                     metric=metric,
-                    status=TASK_STATUS_FAILED,
+                    status=TASK_STATUS_SKIPPED_UNP if unp_skipped else TASK_STATUS_FAILED,
                     csv_path=csv_path,
                     result=False,
-                    details=[f"执行失败: {exc}"],
+                    details=[failure_detail],
                     error=str(exc),
                 )
-            print(f"[{pipeline.name}]  ❌ {metric.file_name} 执行失败：{exc}")
+            marker = "⚠️" if unp_skipped else "❌"
+            print(f"[{pipeline.name}]  {marker} {metric.file_name} {failure_detail}")
 
 
 def build_can_folder_context(
@@ -1455,14 +1485,6 @@ def build_can_folder_context(
             additional_h5_files=additional_h5_files,
             context_end_timestamp=context_end_timestamp,
         )
-    if primary_h5_file and additional_h5_files and primary_h5_range is not None:
-        folder_context["apa_total_count"] = calculate_apa_total_count(
-            folder_context.get("session"),
-            start_timestamp=primary_h5_range[0],
-            end_timestamp=primary_h5_range[1],
-        )
-    else:
-        folder_context["apa_total_count"] = calculate_apa_total_count(folder_context.get("session"))
     return folder_context
 
 
@@ -1587,45 +1609,6 @@ def h5_files_are_continuous(
     if gap_seconds < -float(max_gap_seconds):
         return False
     return gap_seconds <= float(max_gap_seconds)
-
-
-def calculate_apa_total_count(
-    session: Any,
-    start_timestamp: float | None = None,
-    end_timestamp: float | None = None,
-) -> int:
-    if session is None:
-        return 0
-
-    required_signals = [APA_CPI_TYPE_SIGNAL, APA_CPI_STATUS_SIGNAL]
-    if session.missing_signals(required_signals):
-        return 0
-
-    try:
-        if start_timestamp is None or end_timestamp is None:
-            start_timestamp, end_timestamp = session.common_time_range(required_signals)
-        axis, parking_status_raw = session.get_signal_slice(APA_CPI_STATUS_SIGNAL, start_timestamp, end_timestamp)
-        if len(axis) < 2:
-            return 0
-
-        apa_type_values = session.sample_signal_to_axis(
-            APA_CPI_TYPE_SIGNAL,
-            axis,
-            method="nearest",
-            start_timestamp=start_timestamp,
-            end_timestamp=end_timestamp,
-        )
-
-        total_count = 0
-        for index in range(1, len(axis)):
-            prev_status = normalize_numeric_value(parking_status_raw[index - 1])
-            curr_status = normalize_numeric_value(parking_status_raw[index])
-            prev_type = normalize_numeric_value(apa_type_values[index - 1])
-            if prev_type == 1 and prev_status == 5 and curr_status != 5:
-                total_count += 1
-        return total_count
-    except Exception:
-        return 0
 
 
 def calculate_folder_mileage_km(primary_h5_file: str | Path | None) -> float:
@@ -2155,6 +2138,8 @@ def save_metric_result(
         "Metric Value Sum": _safe_float(statistics.get("Metric Value Sum", 0.0)),
         "Metric Value Count": _safe_int(statistics.get("Metric Value Count", 0)),
     }
+    if details and str(details[0]).startswith("未统计：Topic UNP"):
+        row["检查结果"] = "未统计"
 
     if replace_existing and output_path.exists():
         upsert_metric_csv_row(output_path, fieldnames, row)
@@ -2304,12 +2289,18 @@ def generate_unified_report(
 
         case_sums = calculate_case_sums(csv_data)
         pipeline_name, metric_name = split_output_prefix(prefix, csv_data)
+        if is_retired_metric(metric_name):
+            continue
         metric_category = metric_category_map.get(prefix, METRIC_CATEGORY_CPI)
         total_case_sum = case_sums["total_case_sum"]
         bad_case_sum = case_sums["bad_case_sum"]
         total_mileage_km = case_sums["total_mileage_km"]
         metric_value_sum = case_sums["metric_value_sum"]
         metric_value_count = case_sums["metric_value_count"]
+        unp_skipped_rows = [
+            row for row in csv_data
+            if str(row.get("符合要求的内容", "")).startswith("未统计：Topic UNP")
+        ]
 
         bad_case_folders_cache[prefix] = case_sums["bad_case_folders"]
         bad_case_severity_score_cache[prefix] = case_sums["severity_score_folders"]
@@ -2326,6 +2317,12 @@ def generate_unified_report(
                 "Metric Value Sum": metric_value_sum,
                 "Metric Value Count": metric_value_count,
                 "output_prefix": prefix,
+                "unp_skipped": len(unp_skipped_rows),
+                "all_unp_skipped": len(unp_skipped_rows) == len(csv_data),
+                "unp_skip_details": "\n".join(
+                    f"{row.get('文件夹路径', '')}: {row.get('符合要求的内容', '')}"
+                    for row in unp_skipped_rows
+                ),
             }
         )
 
@@ -2345,6 +2342,9 @@ def generate_unified_report(
     red_font = Font(color="FF0000")
 
     headers = ["指标来源", "指标名称", "指标类型", "总里程(km)", "总次数", "触发次数", "MPI", "CPI"]
+    has_unp_skips = any(row["unp_skipped"] for row in statistics_result)
+    if has_unp_skips:
+        headers.append("统计状态")
     for col_idx, header in enumerate(headers, 1):
         cell = ws_main.cell(row=1, column=col_idx, value=header)
         cell.font = header_font
@@ -2368,7 +2368,10 @@ def generate_unified_report(
 
         mpi_text = ""
         cpi_text = ""
-        if metric_category == METRIC_CATEGORY_MPI:
+        if row_data["all_unp_skipped"]:
+            mpi_text = "未统计" if metric_category == METRIC_CATEGORY_MPI else ""
+            cpi_text = "未统计" if metric_category != METRIC_CATEGORY_MPI else ""
+        elif metric_category == METRIC_CATEGORY_MPI:
             if trigger_count == 0:
                 mileage_text = f"{round(total_mileage_km, 3):g}"
                 mpi_text = f">{mileage_text}({mileage_text}/0)"
@@ -2392,6 +2395,15 @@ def generate_unified_report(
         cpi_cell.alignment = header_alignment
         cpi_comment = "CPI = 总次数 / 触发次数\n总次数沿用各指标CSV中的 All Case Count 统计口径"
         cpi_cell.comment = Comment(text=cpi_comment, author="统一统计脚本")
+        if has_unp_skips:
+            skipped = row_data["unp_skipped"]
+            status = ("未统计" if row_data["all_unp_skipped"] else "部分未统计") if skipped else "已统计"
+            status_cell = ws_main.cell(
+                row_idx, 9, f"{status}；{skipped} 个文件夹 UNP 缺失或无法对齐" if skipped else status,
+            )
+            status_cell.alignment = header_alignment
+            if skipped:
+                status_cell.comment = Comment(text=row_data["unp_skip_details"][:30000], author="统一统计脚本")
 
     ws_main.insert_cols(3)
     name_header = ws_main.cell(row=1, column=3, value="中文指标名称")
@@ -2472,7 +2484,7 @@ def generate_bad_case_extract_report(
             continue
 
         pipeline_name, metric_name = split_output_prefix(output_prefix, csv_data)
-        if metric_name.startswith("driving_uninterfered_accel_"):
+        if is_retired_metric(metric_name):
             continue
         rule = resolve_bad_case_extract_rule(extract_config, pipeline_name, metric_name, output_prefix)
         if not rule.enabled:
@@ -2771,24 +2783,6 @@ def calculate_case_sums(csv_data: list[dict[str, str]]) -> dict[str, Any]:
         "severity_score_folders": [item[0] for item in bad_case_items],
         "detail_content_folders": [item[2] for item in bad_case_items],
     }
-
-
-def normalize_numeric_value(value: object) -> int | None:
-    if hasattr(value, "item"):
-        value = value.item()
-    if isinstance(value, bytes):
-        value = value.decode(errors="ignore")
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        return int(float(text))
-    except ValueError:
-        return None
 
 
 def _safe_int(value: object) -> int:

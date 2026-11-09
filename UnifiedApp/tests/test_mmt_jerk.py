@@ -110,8 +110,6 @@ class SyntheticSession(FolderSession):
     def sample_signal_to_axis(self, signal, axis, **kwargs):
         if "IAccPdlOvrrdAtv" in signal:
             return (np.asarray(axis) < 1).tolist()
-        if "APASts" in signal:
-            return [5] * len(axis)
         if "Gear" in signal or "Shft" in signal:
             return np.where(np.asarray(axis) < 2, 12, 14).tolist()
         return [1] * len(axis)
@@ -119,8 +117,6 @@ class SyntheticSession(FolderSession):
 session = SyntheticSession()
 for name, function in (
     ("acc_jerkiness", "count_acc_jerkiness_events"),
-    ("apa_jerkiness", "count_apa_jerkiness_events"),
-    ("apa_gear_switch_jerkiness", "analyze_apa_gear_switch_jerkiness"),
     ("acc_heavy_braking_count", "count_acc_heavy_braking_events"),
     ("acc_heavy_braking_after_override_release_count", "count_acc_heavy_braking_after_override_release_events"),
 ):
@@ -132,16 +128,12 @@ for name, function in (
         np.testing.assert_allclose(calculate.call_args.args[1], a)
     assert result["parameters"]["jerk_regression_window_s"] == 0.3
     assert result["parameters"]["acceleration_smoothing_window_s"] == 0.3
-    if "gear_switch" in name:
-        assert len(result["scenes"]) == 1
 
 # Read actual CAN-format H5 through FolderSession, not only a stubbed session.
 import h5py
 import tempfile
 routes = [
     ("acc_jerkiness", "count_acc_jerkiness_events"),
-    ("apa_jerkiness", "count_apa_jerkiness_events"),
-    ("apa_gear_switch_jerkiness", "analyze_apa_gear_switch_jerkiness"),
     ("acc_heavy_braking_count", "count_acc_heavy_braking_events"),
     ("acc_heavy_braking_after_override_release_count", "count_acc_heavy_braking_after_override_release_events"),
 ]

@@ -15,12 +15,9 @@ import h5py
 import numpy as np
 from signal_preprocessor import build_signal_frame, raw_dependencies_for_field
 from metric_utils import distant_front_clear_mask
-from filters import _driving_uninterfered_accel as uninterfered
 
 for field in ("front_valid", "front_ttc"):
     assert "front_lat_range" not in raw_dependencies_for_field(field)
-assert "front_lat_range" not in uninterfered.REQUIRED_FIELDS
-assert "front_lat_range" not in uninterfered.REQUIRED_PATHS
 with tempfile.TemporaryDirectory() as folder:
     path = Path(folder) / "targets.h5"
     values = {

@@ -41,11 +41,15 @@ def numeric(value: Any) -> float:
         return float("nan")
 
 
-def can_series(session: Any, required_signals: list[str], origin: float) -> tuple[list[PlotSeries], list[str]]:
+def can_series(session: Any, required_signals: list[str], origin: float,
+               unp_gate: Any = None) -> tuple[list[PlotSeries], list[str]]:
+    from can_unp_gate import ACC_ACTIVE_SIGNALS
+
     if session is None:
         raise ValueError("未找到可绘制的 CAN H5")
     series = []
     missing = []
+    gate_range = session.common_time_range(required_signals) if unp_gate is not None else None
     for name in dict.fromkeys([*CAN_SIGNALS, *required_signals]):
         if not session.has_signal(name):
             missing.append(name)
@@ -55,6 +59,11 @@ def can_series(session: Any, required_signals: list[str], origin: float) -> tupl
         values = np.asarray([numeric(value) for value in record["values"]], dtype=float)
         label, unit = CAN_SIGNALS.get(name, (name.split(".")[-1], "raw"))
         series.append(PlotSeries(label, unit, t - origin, values))
+        if (unp_gate is not None and gate_range is not None
+                and name in required_signals and name in ACC_ACTIVE_SIGNALS):
+            axis = t[(t >= gate_range[0]) & (t <= gate_range[1])]
+            unp = np.asarray(unp_gate.states(axis.tolist()), dtype=float)
+            series.append(PlotSeries("Topic UNP on", "state", axis - origin, unp))
         if label == "Acceleration" and len(t) >= 2:
             series.append(PlotSeries("Sustained jerk (0.3s)", "m/s3", t - origin,
                                      jerk_from_acceleration(t, values)))

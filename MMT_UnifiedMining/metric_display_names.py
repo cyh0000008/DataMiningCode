@@ -31,7 +31,6 @@ METRIC_DISPLAY_NAMES = {
     "acc_rollback_count": "溜车",
     "acc_set_speed_reach": "无前车稳速未达到SetSpeed",
     "acc_unreasonable_low_speed_count": "不合理低速",
-    "acc_brake_rapid_toggle_decel_jump_count": "制动跳变导致的实车加速度抖动",
     "acc_heavy_braking_count": "重制动",
     "acc_jerkiness": "顿挫",
     "acc_jerkiness_after_override_release": "Override后顿挫",
@@ -39,27 +38,14 @@ METRIC_DISPLAY_NAMES = {
     "acc_lost_arbitration": "行车断握手",
     "acc_override_brake_request_jerkiness": "进Override后顿挫",
     "acc_start_no_override_jerkiness": "起步顿挫",
-    "acc_exit_after_abs": "ABS触发关联ACC退出",
-    "acc_exit_after_tcs": "TCS触发关联ACC退出",
-    "acc_exit_after_vse": "VSE触发关联ACC退出",
     "tcs_activation_count": "TCS激活",
     "vse_activation_count": "VSE激活",
-    "apa_gear_switch_jerkiness": "泊车换挡顿挫",
-    "apa_jerkiness": "泊车顿挫",
-    "apa_lost_arbitration": "泊车断握手",
-    "apa_parking_completion_count": "泊车完成",
-    "apa_parking_rollback_count": "泊车溜车",
 }
-for measure, label in (
-    ("max_acc", "最大加速度"),
-    ("accel_build_time", "加速建立时间"),
-    ("avg_acc", "平均加速度"),
-):
-    for band, speed in (
-        ("0_30", "0-30 km/h"), ("30_60", "30-60 km/h"),
-        ("60_90", "60-90 km/h"), ("90_plus", ">=90 km/h"),
-    ):
-        METRIC_DISPLAY_NAMES[f"driving_uninterfered_accel_{measure}_{band}"] = f"{label}（{speed}）"
+
+
+def is_retired_metric(metric_name: str) -> bool:
+    return (metric_name.startswith(("acc_exit_after_", "driving_uninterfered_accel_", "apa_"))
+            or metric_name == "acc_brake_rapid_toggle_decel_jump_count")
 
 
 def metric_display_name(metric_name: str) -> str:

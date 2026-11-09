@@ -721,9 +721,15 @@ def _parse_unp_planning_file(file_path: Path) -> list[dict[str, object]]:
             r'/perception/fusion/object_auto"\s*:\s*\{[\s\S]*?"metaTimeMs"\s*:\s*([\d.]+)',
             paragraph,
         )
+        function_match = re.search(
+            r'"FrameInfo"\s*:\s*\{[^{}]*?"function"\s*:\s*"([^"]+)"(?=\s*[,}])',
+            paragraph,
+        )
+        function = function_match.group(1).strip() if function_match else None
         frames.append(
             {
                 "timestamp_ms": timestamp_ms,
+                "np_on": function == "UNP" if function else None,
                 "leadone_info": parse_leadone_info(match.group(2)),
                 "fusion_meta_ms": float(fusion_meta_match.group(1)) if fusion_meta_match else None,
                 "curvature_limit_enabled": curve_enabled,

@@ -10,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from reporting import ensure_xlsx, metric_report_sort_key
-from metric_display_names import metric_display_name
+from metric_display_names import is_retired_metric, metric_display_name
 
 
 DEFAULT_RULE = {
@@ -47,7 +47,7 @@ def write_bad_case_report(
     output_dir = Path(output_dir)
     metric_list = [
         metric for metric in metrics
-        if not metric.name.startswith("driving_uninterfered_accel_")
+        if not is_retired_metric(metric.name)
     ]
     metric_categories = {metric.name: metric.category for metric in metric_list}
     metric_order = sorted(

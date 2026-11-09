@@ -26,33 +26,38 @@ from CompareKPI_United.mpi_cpi_compare import (
 from metric_display_names import metric_display_name
 
 profile = sys.argv[1]
-names = ("follow_stop_min_jerk", "acc_exit_after_abs")
+names = ("follow_stop_min_jerk", "acc_lost_arbitration")
+input_names = names + tuple(f"acc_exit_after_{feature}" for feature in ("abs", "tcs", "vse")) + tuple(
+    f"driving_uninterfered_accel_{measure}_{band}"
+    for measure in ("max_acc", "avg_acc", "accel_build_time")
+    for band in ("0_30", "30_60", "60_90", "90_plus")
+)
 with tempfile.TemporaryDirectory() as folder:
     work = Path(folder)
     if profile == "J6B":
         from metric_utils import MetricResult
         from reporting import StreamingReportWriter, write_summary_xlsx
         results = {
-            name: [MetricResult(name, "MPI" if "exit" in name else "CPI",
+            name: [MetricResult(name, "MPI" if name.startswith("acc_") else "CPI",
                                "case_rate", "synthetic.h5", 60.0, "OK",
                                30, 2, 5.0, [], [])]
-            for name in names
+            for name in input_names
         }
         batch = work / "batch.xlsx"
         write_summary_xlsx(results, batch)
         metrics = [SimpleNamespace(name=name, category=results[name][0].category,
-                                   result_mode="case_rate") for name in names]
+                                   result_mode="case_rate") for name in input_names]
         with StreamingReportWriter(work, "Longitudinal_CPI_Report.xlsx", metrics) as writer:
-            for name in names:
+            for name in input_names:
                 writer.write_result(name, results[name][0])
         outputs = (batch, writer.report_path)
     else:
         from DataMining import generate_unified_report
         stamp = "2026-10-27_15-05-00"
         categories = {}
-        for name in names:
-            prefix = ("can" if "exit" in name else "topic") + "__" + name
-            categories[prefix] = "MPI" if "exit" in name else "CPI"
+        for name in input_names:
+            prefix = ("can" if name.startswith("acc_") else "topic") + "__" + name
+            categories[prefix] = "MPI" if name.startswith("acc_") else "CPI"
             with (work / f"{prefix}_{stamp}.csv").open(
                 "w", newline="", encoding="utf-8-sig"
             ) as stream:
@@ -83,7 +88,7 @@ with tempfile.TemporaryDirectory() as folder:
         info = ResultFile("target", "unified", "SAMPLE", "", "", "", readable)
         values = load_metric_values(info)
         assert values["follow_stop_min_jerk"]["CPI"].number == 15
-        assert values["acc_exit_after_abs"]["MPI"].number == 30
+        assert values["acc_lost_arbitration"]["MPI"].number == 30
 """, profile],
                     cwd=ROOT / f"{profile}_UnifiedMining",
                     env={**os.environ, "PYTHONIOENCODING": "utf-8"},

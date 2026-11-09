@@ -434,7 +434,7 @@ with tempfile.TemporaryDirectory() as folder:
                 "signals": {"acc_active": "sample/signals/acc_active",
                             "abs_active": "sample/signals/abs_active",
                             "acceleration": "sample/signals/acceleration"},
-                "enabled_metrics": ["acc_exit_after_abs"], "output_dir": str(work / "run"),
+                "enabled_metrics": ["tcs_activation_count"], "output_dir": str(work / "run"),
                 "lcc_sync_check": True, "lcc_sync_deferred": True,
             }
             cfg = work / "config.json"

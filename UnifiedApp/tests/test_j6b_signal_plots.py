@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory() as folder:
     data = {
         "acceleration": accel, "ego_speed": np.where(t < 10, 20.0, 0.0),
         "acc_active": np.where(t < 11, 1, 0), "pedal_override": np.zeros(t.size),
-        "abs_active": np.where((t >= 10.5) & (t < 11.5), 1, 0),
+        "tcs_active": np.where((t >= 10.5) & (t < 11.5), 1, 0),
         "front_range": np.full(t.size, 10.0), "front_velocity_abs": np.zeros(t.size),
         "front_target_id": np.ones(t.size), "front_lat_range": np.zeros(t.size),
         "flt1_cutin_flag": np.zeros(t.size),
@@ -102,7 +102,7 @@ with tempfile.TemporaryDirectory() as folder:
     config = {
         "input_path": [str(work)], "powertrain_type": "PHEV",
         "signals": {name: "sample/signals/" + name for name in data},
-        "enabled_metrics": ["follow_stop_min_jerk", "acc_exit_after_abs"],
+        "enabled_metrics": ["follow_stop_min_jerk", "tcs_activation_count"],
         "bad_case_signal_plots": True, "output_dir": str(work / "run"),
         "report_name": "Longitudinal_CPI_Report",
     }
@@ -141,9 +141,8 @@ with tempfile.TemporaryDirectory() as folder:
         assert not np.any(panel.highlight[t > cpi.end_s])
         assert "判定值时刻" in dict(evidence_markers(cpi))
         assert "-2.3" in evidence_summary(cpi)
-        mpi = next(case for case in cases if case.metric_name == "acc_exit_after_abs")
-        assert dict(evidence_markers(mpi))["功能激活"] == 10.5
-        assert dict(evidence_markers(mpi))["ACC退出"] == 11
+        mpi = next(case for case in cases if case.metric_name == "tcs_activation_count")
+        assert mpi.start_s == 10.5
         assert build_evidence_panel(frame, mpi, np.ones(t.size, dtype=bool)) is None
         for case in cases:
             assert ws.cell(case.row_index, headers["绘图状态"]).value.startswith("已生成")
@@ -166,7 +165,7 @@ with tempfile.TemporaryDirectory() as folder:
     scalar_panel = build_evidence_panel(frame, scalar, np.ones(t.size, dtype=bool))
     assert "事件统计值" in scalar_panel.title
     assert np.all(scalar_panel.lines[0].values[(t >= 1) & (t <= 8)] == 5)
-    strict = CaseRow(2, "driving_uninterfered_accel_avg_acc_0_30", str(h5path), 1, 8, 0, "", {
+    strict = CaseRow(2, "synthetic_strict_measurement", str(h5path), 1, 8, 0, "", {
         "screening_measure": "average_acceleration_mps2", "screening_value": 1.5,
         "screening_lower": 1.5, "screening_upper": None, "screening_strict": True})
     assert np.any(build_evidence_panel(frame, strict, np.ones(t.size, dtype=bool)).highlight)

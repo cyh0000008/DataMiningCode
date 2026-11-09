@@ -37,7 +37,7 @@ class UnreadableH5Test(unittest.TestCase):
                             "abs_active": "sample/signals/abs_active",
                             "acceleration": "sample/signals/acceleration"},
                 "defaults": {"h5_read_retries": 1, "h5_read_retry_delay_s": 0},
-                "enabled_metrics": ["acc_exit_after_abs", "curvature_min_speed"], "output_dir": str(work / "run"),
+                "enabled_metrics": ["tcs_activation_count", "curvature_min_speed"], "output_dir": str(work / "run"),
                 "lcc_sync_check": False,
             }
             cfg = work / "config.json"

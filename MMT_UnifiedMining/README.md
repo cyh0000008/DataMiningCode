@@ -1,17 +1,20 @@
 # MMT Unified Mining
 
-The standalone ABS activation metric (`abs_activation_count`) has been removed
-from mining and reporting. ABS-correlated ACC exit (`acc_exit_after_abs`) and
-its required ABS signal remain enabled.
+The standalone ABS activation metric (`abs_activation_count`), all three
+ABS/TCS/VSE-correlated ACC exit metrics and all 12 driving-uninterfered-
+acceleration metrics have been removed from mining, statistics and comparison
+reports. Independent TCS/VSE activation counts remain enabled.
+
+All five APA metrics (parking/gear-switch jerkiness, arbitration loss,
+parking completion and rollback) and `acc_brake_rapid_toggle_decel_jump_count`
+have been removed, including their dedicated signals, instructions and debug
+configs. They are no longer mined or exported; other ACC metrics remain enabled.
 
 Bad Case extraction reports display Chinese metric names consistent with comparison reports
 in the metric-name column. The existing metric-key column, extraction-rule keys, CSV filenames
 and summary-report identifiers remain unchanged.
 Mining summary reports also include a Chinese metric-name column immediately after the
 original metric-name column; code identifiers and statistics remain unchanged.
-All 12 driving-uninterfered-acceleration metrics are excluded from Bad Case
-extraction reports, regardless of extraction rules. Their calculations, CSV
-outputs, summary statistics and comparison reports remain unchanged.
 
 ## Bad Case signal plots
 
@@ -50,6 +53,34 @@ to the ZIP. Plotting increases runtime and report size. Existing reports are
 not modified automatically; rerun mining with plotting enabled.
 
 ## Driver override truncates scenes
+
+### CAN ACC activation also requires Topic UNP
+
+The 10 CAN ACC metrics that depend on `IACCAct376` or `IACCATC_ACCAct` now
+require **the original CAN active condition AND Topic `FrameInfo.function == "UNP"`**
+(the source of `NP_State.f_Np_on`). This includes ACC jerk/override/start
+metrics, heavy braking, rollback, arbitration, set-speed/low-speed
+checks. Independent
+TCS/VSE activation counts retain their original conditions.
+
+CAN reads the planning Topic file even if the Topic metric pipeline is disabled.
+UNP stamps are converted from milliseconds to the CAN seconds axis and matched
+to the nearest frame within **300 ms**, reusing the existing CAN/Topic matching
+rule. An explicit non-UNP state is valid data but does not permit an ACC sample;
+an absent `FrameInfo.function`, missing/unreadable planning file or out-of-tolerance
+frame is not treated as "off" or silently ignored. If any required CAN sample in
+the common signal range lacks a valid UNP match, the folder's ACC-dependent
+metrics are skipped, with `未统计` and the reason in CSV/logs and a
+`skipped_unp_alignment` run-state status. Skipped folders contribute no mileage
+to those metrics. The summary shows `未统计` rather than a zero-event MPI if
+all folders were skipped, or `部分未统计` and a reason comment if only some were.
+
+Cross-done CAN contexts also require UNP coverage in the actual continued H5's
+folder, within the same continuation window. Bad Case plots include the raw CAN
+activation and matched Topic UNP states separately.
+
+This changes mining results; rerun old data under the new rule for comparisons.
+Previously generated CSV/XLSX files are not retroactively updated.
 
 All topic scene CPIs (curve, follow start, follow stop including its stable
 distance window, red light, stop-and-go, traffic-light stop-and-go and slope)
@@ -167,8 +198,8 @@ no adjacent/three-point difference and no additional jerk smoothing.
 
 `jerk_utils.py` is local to MMT so this project can still be deployed independently.
 It is used by all seven Topic jerk CPI implementations, Topic/CAN ACC jerkiness
-and heavy braking, dedicated ACC jerkiness scenes, APA jerkiness and gear-switch
-jerkiness. Existing signal selection, slope compensation, thresholds and event
+and heavy braking and dedicated ACC jerkiness scenes.
+Existing signal selection, slope compensation, thresholds and event
 duration criteria are unchanged. High-pass acceleration analysis, torque rates
 and unrelated acceleration/speed statistics retain their existing filters.
 

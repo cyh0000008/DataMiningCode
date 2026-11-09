@@ -102,40 +102,15 @@ SIGNAL_MAP: dict[str, tuple[str, str, str]] = {
     "溜车": ("can", "acc_rollback_count", "MPI"),
     "无前车稳速未达到SetSpeed": ("can", "acc_set_speed_reach", "MPI"),
     "不合理低速": ("can", "acc_unreasonable_low_speed_count", "MPI"),
-    "制动跳变导致的实车加速度抖动": ("can", "acc_brake_rapid_toggle_decel_jump_count", "MPI"),
     "点刹": ("can", "acc_brake_tap_count", "MPI"),
     "重制动": ("can", "acc_heavy_braking_count", "MPI"),
     "顿挫": ("can", "acc_jerkiness", "MPI"),
     "Override后顿挫": ("can", "acc_jerkiness_after_override_release", "MPI"),
     "Override后重制动": ("can", "acc_heavy_braking_after_override_release_count", "MPI"),
     "行车断握手": ("can", "acc_lost_arbitration", "MPI"),
-    "ABS触发关联ACC退出": ("can", "acc_exit_after_abs", "MPI"),
-    "TCS触发关联ACC退出": ("can", "acc_exit_after_tcs", "MPI"),
-    "VSE触发关联ACC退出": ("can", "acc_exit_after_vse", "MPI"),
     "进Override后顿挫": ("can", "acc_override_brake_request_jerkiness", "MPI"),
     "起步顿挫": ("can", "acc_start_no_override_jerkiness", "MPI"),
 }
-
-DRIVING_ACCEL_SPEED_BANDS = (
-    ("0_30", "0-30 km/h"),
-    ("30_60", "30-60 km/h"),
-    ("60_90", "60-90 km/h"),
-    ("90_plus", ">=90 km/h"),
-)
-DRIVING_ACCEL_MEASURES = (
-    ("max_acc", "最大加速度"),
-    ("accel_build_time", "加速建立时间"),
-    ("avg_acc", "平均加速度"),
-)
-DRIVING_ACCEL_METRIC_NAMES: set[str] = set()
-for measure_key, measure_label in DRIVING_ACCEL_MEASURES:
-    for band_key, band_label in DRIVING_ACCEL_SPEED_BANDS:
-        display_name = f"{measure_label}（{band_label}）"
-        english_name = f"driving_uninterfered_accel_{measure_key}_{band_key}"
-        normalized_name = display_name.replace(" ", "")
-        SIGNAL_MAP[normalized_name] = ("topic", english_name, "CPI")
-        DRIVING_ACCEL_METRIC_NAMES.add(display_name)
-
 
 REPORT_PROFILE_J6B = "J6B"
 REPORT_PROFILE_MMT = "MMT"
@@ -169,7 +144,6 @@ RELEASE_THRESHOLDS = {
         "溜车": 500,
         "无前车稳速未达到SetSpeed": 200,
         "不合理低速": 100,
-        "制动跳变导致的实车加速度抖动": 500,
         "点刹": 80,
         "重制动": 80,
         "顿挫": 80,
@@ -206,7 +180,6 @@ RELEASE_THRESHOLDS = {
         "溜车": 500,
         "无前车稳速未达到SetSpeed": 200,
         "不合理低速": 100,
-        "制动跳变导致的实车加速度抖动": 500,
         "点刹": 80,
         "重制动": 100,
         "顿挫": 100,
@@ -260,20 +233,16 @@ J6B_METRIC_NAMES = frozenset(
         "溜车",
         "无前车稳速未达到SetSpeed",
         "不合理低速",
-        "制动跳变导致的实车加速度抖动",
         "点刹",
         "重制动",
         "顿挫",
         "Override后顿挫",
         "Override后重制动",
         "行车断握手",
-        "ABS触发关联ACC退出",
-        "TCS触发关联ACC退出",
-        "VSE触发关联ACC退出",
         "进Override后顿挫",
         "起步顿挫",
     }
-) | frozenset(DRIVING_ACCEL_METRIC_NAMES)
+)
 
 PROFILE_SIGNAL_MAP_OVERRIDES: dict[str, dict[str, tuple[str, str, str]]] = {
     REPORT_PROFILE_J6B: {
@@ -283,9 +252,6 @@ PROFILE_SIGNAL_MAP_OVERRIDES: dict[str, dict[str, tuple[str, str, str]]] = {
 
 
 METRIC_STANDARDS: dict[str, str] = {
-    "ABS触发关联ACC退出": "ABS由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
-    "TCS触发关联ACC退出": "TCS由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
-    "VSE触发关联ACC退出": "VSE由未激活转为激活时ACC已激活，且1秒内ACC由激活转为未激活；按关联退出事件计数",
     "起步最大加速度": "1.0~3.0m/s2",
     "起步最大jerk": "<=3.5m/s3",
     "初段建立时间": "达到3.33m/s所需时间：1.0~3.5s",
@@ -312,7 +278,6 @@ METRIC_STANDARDS: dict[str, str] = {
     "溜车": "ACC active/hold/前进挡，车速<=0.5kph且轮速非零，持续>=0.20s",
     "无前车稳速未达到SetSpeed": "ACC active且无override，场景>=8s、车速波动<=2kph，未达到SetSpeed",
     "不合理低速": "ACC active且无override，无前车风险/红灯停车/曲率限速；SetSpeed不变，表显车速>5kph且稳定>=8s，波动<1.5kph，SetSpeed-v_max>=8kph",
-    "制动跳变导致的实车加速度抖动": "ACC active且无override，AutoBrake 2->1->2中间态<=0.10s，随后1s减速度波动>2.0m/s2",
     "点刹": "ACC active且无override，无前车稳速或有前车稳定跟车中出现制动点刹；制动扭矩短脉冲0.08~1.50s，峰值突出>=180Nm，加速度下探>=0.2m/s2",
     "重制动": "ACC active且无override；主规则：1.6s内降幅>=3.0m/s2、斜率>=3.0m/s3，加速度<=-2.0m/s2持续>=0.20s，滤波jerk<=-2.0m/s3；补充：深短尖峰<=-2.7m/s2、降幅>=2.6m/s2、驻留<=0.12s、jerk<=-10，或深持续制动<=-2.7m/s2、降幅>=1.3m/s2、驻留>=0.35s、jerk<=-5",
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，平滑加速度振荡幅值>=0.75、符号翻转>=1、候选时长>0.5s且<=4s，并通过驱动/制动扭矩校验",
@@ -322,19 +287,6 @@ METRIC_STANDARDS: dict[str, str] = {
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
     "起步顿挫": "起步1s窗口内，按顿挫规则",
 }
-for metric_name in DRIVING_ACCEL_METRIC_NAMES:
-    METRIC_STANDARDS[metric_name.replace(" ", "")] = (
-        "ACC 激活且无 override/前车/cut-in/红灯；停止线距离>50m；Fusion 前方目标状态有效；"
-        "SetSpeed>初始车速+22km/h；"
-        "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
-        "平滑车速未持续下降超过1km/h；报告事件均值。"
-    )
-    if metric_name.startswith("最大加速度"):
-        key = metric_name.replace(" ", "")
-        METRIC_STANDARDS[key] = METRIC_STANDARDS[key].replace(
-            "报告事件均值。", "每段事件最大加速度合格区间：1.5~2.5m/s2（含边界）；越界计为Bad Case，按常规CPI汇总。"
-        )
-
 # J6B 专用标准只覆盖当前模板已有指标；不额外引入 J6B_UnifiedMining
 # filters 中存在但模板未放入的指标。
 J6B_METRIC_STANDARDS: dict[str, str] = {
@@ -353,29 +305,6 @@ J6B_METRIC_STANDARDS: dict[str, str] = {
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，车速>0，候选时长>0.5s且<=4s，幅值>=0.75，符号翻转>=1，扭矩/jerk校验通过",
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
 }
-for metric_name in DRIVING_ACCEL_METRIC_NAMES:
-    J6B_METRIC_STANDARDS[metric_name.replace(" ", "")] = (
-        "ACC 激活且无 override/前车/cut-in；SetSpeed>初始车速+22km/h；"
-        "无曲率限速或曲率限速高于目标车速+2km/h；0.5s平滑确认场景，30s内车速上涨20km/h且"
-        "平滑车速未持续下降超过1km/h；报告事件均值。J6B 暂无红灯/停止线信号映射，未应用该筛选。"
-    )
-    if metric_name.startswith("最大加速度"):
-        key = metric_name.replace(" ", "")
-        J6B_METRIC_STANDARDS[key] = J6B_METRIC_STANDARDS[key].replace(
-            "报告事件均值。", "每段事件最大加速度合格区间：1.5~2.5m/s2（含边界）；越界计为Bad Case，按常规CPI汇总。"
-        )
-
-for measure_key, measure_label in DRIVING_ACCEL_MEASURES:
-    criterion = {
-        "max_acc": "事件最大加速度：1.5~2.5 m/s²（含边界）",
-        "avg_acc": "平均加速度（车速增量/事件耗时）：>1.5 m/s²",
-        "accel_build_time": "加速建立时间（加速度首次>0.2 m/s²至峰值）：<3.5 s",
-    }[measure_key]
-    for band_key, band_label in DRIVING_ACCEL_SPEED_BANDS:
-        key = f"{measure_label}（{band_label}）".replace(" ", "")
-        METRIC_STANDARDS[key] = criterion
-        J6B_METRIC_STANDARDS[key] = criterion
-
 PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {
     REPORT_PROFILE_J6B: J6B_METRIC_STANDARDS,
 }
@@ -1604,6 +1533,49 @@ def insert_powertrain_header(ws, powertrain_type: str) -> None:
     ws.row_dimensions[2].height = ws.row_dimensions[1].height
 
 
+def remove_retired_metric_rows(ws, report_profile: str) -> None:
+    retired = {
+        "制动跳变导致的实车加速度抖动",
+        "ABS触发关联ACC退出", "TCS触发关联ACC退出", "VSE触发关联ACC退出",
+    }
+    retired.update(
+        normalize(f"{measure}（{band}）")
+        for measure in ("最大加速度", "加速建立时间", "平均加速度")
+        for band in ("0-30 km/h", "30-60 km/h", "60-90 km/h", ">=90 km/h")
+    )
+    if report_profile == REPORT_PROFILE_MMT:
+        retired.update({"泊车换挡顿挫", "泊车顿挫", "泊车断握手", "泊车完成", "泊车溜车"})
+    rows = {
+        row for row in range(6, ws.max_row + 1)
+        if normalize(ws.cell(row, 2).value) in retired
+    }
+    if not rows:
+        return
+
+    # openpyxl does not shift merged ranges or row dimensions when deleting rows.
+    ranges = [(copy(area), ws.cell(area.min_row, area.min_col).value)
+              for area in ws.merged_cells.ranges]
+    for area, _value in ranges:
+        ws.unmerge_cells(str(area))
+    dimensions = {row: copy(dimension) for row, dimension in ws.row_dimensions.items()}
+    ws.row_dimensions.clear()
+    for row in sorted(rows, reverse=True):
+        ws.delete_rows(row)
+    for row, dimension in dimensions.items():
+        if row not in rows:
+            shifted = row - sum(deleted < row for deleted in rows)
+            dimension.index = shifted
+            ws.row_dimensions[shifted] = dimension
+    for area, value in ranges:
+        if all(row in rows for row in range(area.min_row, area.max_row + 1)):
+            continue
+        start = area.min_row - sum(row < area.min_row for row in rows)
+        end = area.max_row - sum(row <= area.max_row for row in rows)
+        ws.cell(start, area.min_col, value)
+        ws.merge_cells(start_row=start, end_row=end,
+                       start_column=area.min_col, end_column=area.max_col)
+
+
 def hide_unmapped_template_rows(
     ws, report_profile: str, metric_filter: set[str] | None = None
 ) -> set[int]:
@@ -1925,6 +1897,7 @@ def build_report(
         raise ValueError(f"模板中未找到 {SUMMARY_SHEET}")
     ws = wb[SUMMARY_SHEET]
 
+    remove_retired_metric_rows(ws, report_profile)
     write_top_headers(ws, base_info, target_info)
     hidden_rows = hide_unmapped_template_rows(
         ws, report_profile, metric_filter_for_profile(report_profile)
@@ -1978,17 +1951,11 @@ def build_report(
             ws[f"{base_col}{row}"] = display_raw(base_value)
         ws[f"{target_col}{row}"] = display_raw(target_value)
         if base_available:
-            if english_name.startswith("driving_uninterfered_accel_") and any(
-                re.search(r"\bn\s*=", str(value.raw)) for value in (base_value, target_value)
-            ):
-                result, number_diff, bad_diff = "无法比较", None, None
-                compare_reason = "历史加速指标为测量均值，与当前阈值型CPI口径不同；需重新挖掘"
-            else:
-                result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
-                color_target_cell(
-                    ws[f"{target_col}{row}"],
-                    target_highlight(base_value, target_value, threshold, metric_type),
-                )
+            result, number_diff, bad_diff, compare_reason = compare_metric(base_value, target_value)
+            color_target_cell(
+                ws[f"{target_col}{row}"],
+                target_highlight(base_value, target_value, threshold, metric_type),
+            )
         else:
             result, number_diff, bad_diff = "仅target", None, None
             compare_reason = "base为空，仅展示target结果"

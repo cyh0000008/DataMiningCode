@@ -156,7 +156,6 @@ assert bad == (0 if powertrain == "ICE" else 1), (powertrain, bad)
             ws.title = "所有指标统计汇总"
             ws.append(["指标来源", "指标名称", "指标类型", "总里程(km)", "总次数", "触发次数", "MPI", "CPI"])
             ws.append(["topic", "stop2go_max_jerk", "CPI", 10, 2, 0, None, "100.0(2/0)"])
-            ws.append(["topic", "driving_uninterfered_accel_max_acc_0_30", "CPI", 10, 5, 2, None, "2.5(5/2)"])
             wb.save(source)
             wb.close()
             mining.archived_report_path = source

@@ -147,27 +147,6 @@ assert merge_short_gaps(
     barrier_times, braking_mask, 0.5, barrier_mask=barrier_mask
 ).tolist() == braking_mask.tolist()
 
-# Rapid-toggle events require uninterrupted ACC control through both the
-# 2-1-2 sequence and its one-second deceleration observation window.
-toggle_times = np.round(np.arange(0, 3.01, 0.1), 6)
-toggle_fields = {
-    "time_s": toggle_times,
-    "acc_active_flag": np.ones(len(toggle_times)),
-    "pedal_override_flag": np.zeros(len(toggle_times)),
-    "brake_request_type": np.full(len(toggle_times), 2.),
-    "acceleration": np.zeros(len(toggle_times)),
-}
-toggle_fields["brake_request_type"][10] = 1.
-toggle_fields["acceleration"][10] = -3.
-toggle = SignalFrame("synthetic", "", {}, toggle_fields, {})
-metric = import_module("filters.acc_brake_rapid_toggle_decel_jump_count").create_metric()
-assert len(metric.evaluate(toggle).events) == 1
-toggle.fields["pedal_override_flag"][9] = 1
-assert len(metric.evaluate(toggle).events) == 0
-toggle.fields["pedal_override_flag"][:] = 0
-toggle.fields["pedal_override_flag"][15] = 1
-assert len(metric.evaluate(toggle).events) == 0
-
 t = np.round(np.arange(0, 12.01, .1), 6)
 n = len(t)
 lost = SignalFrame("synthetic", "", {}, {

@@ -76,11 +76,14 @@ def analyze_acc_lost_arbitration(
     session = session_or_h5_path if isinstance(session_or_h5_path, FolderSession) else FolderSession(session_or_h5_path)
     start_timestamp, end_timestamp = session.common_time_range(REQUIRED_SIGNALS)
 
-    axis, acc_active_raw = session.get_signal_slice(SIGNAL_KEYS["acc_active"], start_timestamp, end_timestamp)
+    axis, _ = session.get_signal_slice(SIGNAL_KEYS["acc_active"], start_timestamp, end_timestamp)
     if len(axis) < 2:
         return _empty_result(start_timestamp, end_timestamp)
 
-    acc_active = acc_active_raw
+    acc_active = session.sample_signal_to_axis(
+        SIGNAL_KEYS["acc_active"], axis, method="nearest",
+        start_timestamp=start_timestamp, end_timestamp=end_timestamp,
+    )
     request_state = session.sample_signal_to_axis(
         SIGNAL_KEYS["request_state"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
