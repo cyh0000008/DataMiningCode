@@ -761,6 +761,7 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
 
 
 def curvature_segments(frame: SignalFrame) -> List[Segment]:
+    min_duration_s = 3.0
     min_speed_mps = 10.0 / KPH_PER_MPS
     curvature = frame.col("curvature", 0.0).astype(float)
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
@@ -775,7 +776,7 @@ def curvature_segments(frame: SignalFrame) -> List[Segment]:
     )
     segments = []
     for seg in mask_to_segments(frame.time_s, mask):
-        if seg.sample_count() < 50:
+        if seg.duration(frame.time_s) < min_duration_s:
             continue
         if int(np.sum(curvature[seg.start : seg.end + 1] > 0.004)) < 5:
             continue
