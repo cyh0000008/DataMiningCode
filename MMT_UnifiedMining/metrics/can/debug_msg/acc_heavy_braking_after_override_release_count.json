@@ -8,5 +8,11 @@
   ],
   "axes3": [
     "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
+  ],
+  "axes4": [
+    "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrq"
+  ],
+  "axes5": [
+    "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVl"
   ]
 }

@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from signal_lib import FolderSession, mask_to_segments
+from override_braking_torque import find_torque_braking_events
+from metrics.can.code.acc_jerkiness import (
+    ACTUAL_DRIVE_TORQUE_SIGNAL, ACTUAL_BRAKE_TORQUE_SIGNAL, sample_torque_signals_to_axis,
+)
+import numpy as np
 
 
 METRIC_CATEGORY = "MPI"
@@ -16,7 +21,7 @@ ACCELERATION_SIGNAL = "IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec"
 ACC_ACTIVE_SIGNAL = "Adaptive_Cruise_Disp_Stat.IACCAct376"
 PEDAL_OVERRIDE_SIGNAL = "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv"
 
-DEFAULT_POST_OVERRIDE_WINDOW_SECONDS = 5.0
+DEFAULT_POST_OVERRIDE_WINDOW_SECONDS = 1.0
 DEFAULT_ACCELERATION_SMOOTHING_WINDOW = 5
 DEFAULT_JERK_SMOOTHING_WINDOW = 5
 DEFAULT_HEAVY_BRAKE_ACCEL_THRESHOLD = -2.0
@@ -28,6 +33,8 @@ REQUIRED_SIGNALS = [
     ACCELERATION_SIGNAL,
     ACC_ACTIVE_SIGNAL,
     PEDAL_OVERRIDE_SIGNAL,
+    ACTUAL_DRIVE_TORQUE_SIGNAL,
+    ACTUAL_BRAKE_TORQUE_SIGNAL,
 ]
 
 SIGNAL_KEYS = {
@@ -52,7 +59,8 @@ def __run_haoran_data_run__(folder_context: dict[str, Any]) -> tuple[bool, list[
         result_lines.insert(0, f"【运算总耗时】: {time.time() - start_time:.4f} 秒")
         return False, result_lines, stats
 
-    result = count_acc_heavy_braking_after_override_release_events(session)
+    result = count_acc_heavy_braking_after_override_release_events(
+        session, primary_end_timestamp=folder_context.get("primary_end_timestamp"))
     event_count = int(result["event_count"])
     max_severity = float(result["max_event_severity"])
 
@@ -74,7 +82,10 @@ def __run_haoran_data_run__(folder_context: dict[str, Any]) -> tuple[bool, list[
         result_lines.append(
             f"[Event start={event['start_timestamp']:.3f}, end={event['end_timestamp']:.3f}, duration={event['duration']:.3f}, "
             f"sample_count={event['sample_count']}, min_acceleration={event['min_acceleration']:.3f}, "
-            f"min_filtered_jerk={event['min_filtered_jerk']:.3f}, severity={event['severity']:.3f}]"
+            f"min_filtered_jerk={event['min_filtered_jerk']:.3f}, severity={event['severity']:.3f}, "
+            f"release={event['release_timestamp']:.3f}, torque_onset={event['torque_onset_timestamp']:.3f}, "
+            f"torque_confirm={event['torque_confirm_timestamp']:.3f}, torque={event['torque_type']}, "
+            f"rate={event['torque_rate']:.1f}, change={event['torque_change']:.1f}]"
         )
 
     result_lines.insert(0, f"【运算总耗时】: {time.time() - start_time:.4f} 秒")
@@ -90,14 +101,17 @@ def count_acc_heavy_braking_after_override_release_events(
     heavy_brake_jerk_threshold: float = DEFAULT_HEAVY_BRAKE_JERK_THRESHOLD,
     min_brake_duration_seconds: float = DEFAULT_MIN_BRAKE_DURATION_SECONDS,
     merge_gap_seconds: float = DEFAULT_MERGE_GAP_SECONDS,
+    primary_end_timestamp: float | None = None,
 ) -> dict[str, object]:
+    if post_override_window_seconds != 1.0:
+        raise ValueError("Override braking observation window is fixed at 1 second")
     session = session_or_h5_path if isinstance(session_or_h5_path, FolderSession) else FolderSession(session_or_h5_path)
     start_timestamp, end_timestamp = session.common_time_range(REQUIRED_SIGNALS)
 
     axis, accel_raw = session.get_signal_slice(SIGNAL_KEYS["acceleration"], start_timestamp, end_timestamp)
     accel_values = [float(value) for value in accel_raw]
     if len(axis) < 3:
-        return _empty_result(start_timestamp, end_timestamp, post_override_window_seconds, acceleration_smoothing_window, jerk_smoothing_window, heavy_brake_accel_threshold, heavy_brake_jerk_threshold, min_brake_duration_seconds, merge_gap_seconds)
+        raise ValueError("采样点不足，Override后重制动未统计")
 
     acc_active_values = session.sample_signal_to_axis(
         SIGNAL_KEYS["acc_active"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
@@ -106,77 +120,72 @@ def count_acc_heavy_braking_after_override_release_events(
         SIGNAL_KEYS["pedal_override"], axis, method="nearest", start_timestamp=start_timestamp, end_timestamp=end_timestamp
     )
 
-    scenes = _collect_post_override_scenes(
-        axis=axis,
-        acc_active_values=acc_active_values,
-        pedal_override_values=pedal_override_values,
-        window_seconds=post_override_window_seconds,
+    drive, brake = sample_torque_signals_to_axis(session, axis, start_timestamp, end_timestamp)
+    t = np.asarray(axis, dtype=float)
+    accel = np.asarray(accel_values, dtype=float)
+    primary = t <= primary_end_timestamp if primary_end_timestamp is not None else np.ones(len(t), dtype=bool)
+    if not np.any(np.isfinite(np.asarray(drive)[primary])) or not np.any(np.isfinite(np.asarray(brake)[primary])):
+        raise ValueError("实车驱动或制动扭矩无有效数据，Override后重制动未统计")
+
+    def detect_braking(release: int, onset: int, end: int) -> dict | None:
+        left = max(0, int(np.searchsorted(t, t[release] - 0.6)) - 1)
+        _, local_jerk = sustained_jerk(
+            axis[left:end + 1], accel_values[left:end + 1],
+            acceleration_smoothing_window, jerk_smoothing_window)
+        mask = np.isfinite(accel) & (accel < heavy_brake_accel_threshold)
+        if mask[release - 1]:
+            return None
+        for segment in mask_to_segments(axis[release:end + 1], mask[release:end + 1].tolist()):
+            start = release + segment.start_index
+            finish = release + segment.end_index
+            values = np.asarray(local_jerk[start - left:finish - left + 1], dtype=float)
+            if (t[start] > t[release] + 0.2 + 1e-9 or finish < onset
+                    or segment.duration + 1e-9 < min_brake_duration_seconds
+                    or not np.any(np.isfinite(values)) or np.nanmin(values) >= heavy_brake_jerk_threshold):
+                continue
+            min_acc = float(np.min(accel[start:finish + 1]))
+            min_jerk = float(np.nanmin(values))
+            return {"start_index": start, "end_index": finish, "min_acceleration": min_acc,
+                    "min_filtered_jerk": min_jerk, "severity": _score_event_severity(
+                        min_acc, min_jerk, heavy_brake_accel_threshold, heavy_brake_jerk_threshold)}
+        return None
+
+    matches = find_torque_braking_events(
+        t, np.asarray(acc_active_values, dtype=float), np.asarray(pedal_override_values, dtype=float),
+        np.asarray(drive), np.asarray(brake), detect_braking,
+        float(primary_end_timestamp) if primary_end_timestamp is not None else float("inf"),
     )
-    if not scenes:
-        return _empty_result(start_timestamp, end_timestamp, post_override_window_seconds, acceleration_smoothing_window, jerk_smoothing_window, heavy_brake_accel_threshold, heavy_brake_jerk_threshold, min_brake_duration_seconds, merge_gap_seconds)
-
-    qualified_mask = [False] * len(axis)
-    for scene in scenes:
-        for index in range(int(scene["start_index"]), int(scene["end_index"]) + 1):
-            qualified_mask[index] = _as_bool(acc_active_values[index]) and (not _as_bool(pedal_override_values[index]))
-
-    smoothed_acc, jerk_values = sustained_jerk(
-        axis, accel_values, acceleration_smoothing_window, jerk_smoothing_window,
-    )
-    filtered_jerk = jerk_values[1:]
-
-    candidate_timestamps = axis[1:]
-    candidate_valid_mask = [qualified_mask[index] and qualified_mask[index - 1] and math.isfinite(filtered_jerk[index - 1]) for index in range(1, len(axis))]
-    accel_candidates = accel_values[1:]
-    qualified_sample_count = sum(candidate_valid_mask)
-
-    heavy_brake_mask = [
-        is_valid and accel_value < heavy_brake_accel_threshold
-        for is_valid, accel_value in zip(candidate_valid_mask, accel_candidates)
-    ]
-
-    raw_events = _detect_heavy_braking_events(
-        timestamps=candidate_timestamps,
-        braking_mask=heavy_brake_mask,
-        accel_values=accel_candidates,
-        filtered_jerk=filtered_jerk,
-        jerk_threshold=heavy_brake_jerk_threshold,
-        min_duration_seconds=min_brake_duration_seconds,
-        heavy_brake_accel_threshold=heavy_brake_accel_threshold,
-    )
-    events = _merge_close_events(
-        raw_events,
-        timestamps=candidate_timestamps,
-        accel_values=accel_candidates,
-        filtered_jerk=filtered_jerk,
-        accel_threshold=heavy_brake_accel_threshold,
-        jerk_threshold=heavy_brake_jerk_threshold,
-        merge_gap_seconds=merge_gap_seconds,
-    )
-
-    scene_results: list[dict[str, float | int]] = []
-    for scene in scenes:
-        scene_start = float(scene["start_timestamp"])
-        scene_end = float(scene["end_timestamp"])
-        overlapping_events = [
-            event for event in events
-            if float(event["end_timestamp"]) >= scene_start and float(event["start_timestamp"]) <= scene_end
-        ]
-        scene_results.append(
-            {
-                "release_timestamp": float(scene["release_timestamp"]),
-                "start_timestamp": scene_start,
-                "end_timestamp": scene_end,
-                "duration": float(scene["duration"]),
-                "sample_count": int(scene["sample_count"]),
-                "event_count": len(overlapping_events),
-                "severity": round(max((float(event["severity"]) for event in overlapping_events), default=0.0), 3),
-            }
-        )
+    events = []
+    for match in matches:
+        start, end = match["start_index"], match["end_index"]
+        events.append({**match, "start_timestamp": axis[start], "end_timestamp": axis[end],
+                       "duration": axis[end] - axis[start], "sample_count": end - start + 1,
+                       "release_timestamp": axis[match["release_index"]],
+                       "torque_onset_timestamp": axis[match["torque_onset_index"]],
+                       "torque_confirm_timestamp": axis[match["torque_confirm_index"]]})
+    scene_results = []
+    for index in range(1, len(axis)):
+        if (pedal_override_values[index - 1] == 1 and pedal_override_values[index] == 0
+                and _as_bool(acc_active_values[index])
+                and (primary_end_timestamp is None or axis[index] <= primary_end_timestamp)):
+            matched = next((event for event in events if event["release_index"] == index), None)
+            end = index
+            while (end + 1 < len(axis) and axis[end + 1] <= axis[index] + 1.2 + 1e-9
+                   and _as_bool(acc_active_values[end + 1])
+                   and not _as_bool(pedal_override_values[end + 1])
+                   and math.isfinite(drive[end + 1]) and math.isfinite(brake[end + 1])):
+                end += 1
+            scene_results.append({
+                "release_timestamp": axis[index], "start_timestamp": axis[index],
+                "end_timestamp": axis[end], "duration": axis[end] - axis[index],
+                "sample_count": end - index + 1, "event_count": int(matched is not None),
+                "severity": matched["severity"] if matched is not None else 0.0,
+            })
+    qualified_sample_count = sum(_as_bool(a) and not _as_bool(o) for a, o in zip(acc_active_values, pedal_override_values))
 
     return {
         "metric_name": "acc_heavy_braking_after_override_release_count",
-        "method": "post_override_window_heavy_brake_with_filtered_jerk_gate",
+        "method": "override_release_torque_and_heavy_braking",
         "event_count": len(events),
         "scene_count": len(scene_results),
         "qualified_sample_count": qualified_sample_count,
@@ -190,6 +199,12 @@ def count_acc_heavy_braking_after_override_release_events(
             "heavy_brake_jerk_threshold": heavy_brake_jerk_threshold,
             "min_brake_duration_seconds": min_brake_duration_seconds,
             "merge_gap_seconds": merge_gap_seconds,
+            "onset_deadline_seconds": 0.2,
+            "torque_smoothing_seconds": 0.08,
+            "brake_rate_nm_per_s": 2500.0,
+            "drive_rate_nm_per_s": -1500.0,
+            "brake_increase_nm": 120.0,
+            "drive_decrease_nm": 80.0,
         },
         "scenes": scene_results,
         "events": events,
@@ -377,7 +392,7 @@ def _as_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
-        return value != 0
+        return math.isfinite(value) and value != 0
     text = str(value).strip().lower()
     return text not in {"0", "false", "none", ""}
 

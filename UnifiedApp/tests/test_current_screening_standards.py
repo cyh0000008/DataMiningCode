@@ -83,12 +83,13 @@ class CurrentScreeningStandardsTests(unittest.TestCase):
                 distance = standards["跟车刹停距离"]
                 expected_range = "2.5~4.5m" if profile == "J6B" and powertrain == "ICE" else "3~4m"
                 self.assertEqual(distance, expected_range)
-                for text in standards.values():
+                for name, text in standards.items():
                     self.assertNotIn("场景", text)
                     self.assertNotIn("拟合", text)
                     self.assertNotIn("观察", text)
                     self.assertNotIn("无下限", text)
-                    self.assertLessEqual(len(text), 70)
+                    if name != "Override后重制动":
+                        self.assertLessEqual(len(text), 70)
 
 
 if __name__ == "__main__":

@@ -1,92 +1,24 @@
-# acc_heavy_braking_after_override_release_count 指标说明
+# Override 后重制动
 
-## 1. 检查对象
+## 判定
 
-检查驾驶员 override 结束后的 5 秒窗口，统计窗口内出现的 ACC 重制动事件。
+在驾驶员 Override 下降沿后，ACC（包含 Topic UNP 门槛）必须保持开启且无再次
+Override。重制动候选和实车扭矩突变都必须在释放后 **200ms 内开始**（包含边界）。
+检测到的扭矩速率首次达到阈值的采样点为突变起点，从该点最多观察 **1s**：
 
-重制动口径沿用 `acc_heavy_braking_count`，这里只是把分析范围限定到 override 释放后的固定窗口。
+- 实车制动扭矩变化率 ≥2500 Nm/s，且相对突变前一个采样增加 ≥120 Nm；或
+- 实车驱动扭矩变化率 ≤−1500 Nm/s，且相对突变前一个采样减少 ≥80 Nm。
 
-## 2. 使用信号
+速率沿用顿挫指标的 0.08s 平滑和相邻点差分，但平滑采用后向窗口，
+避免未来值使突变看起来提前发生。变化量使用原始有效扭矩。两路实际扭矩均须存在；
+有效位存在时按有效位过滤，缺失时沿用顿挫指标的兼容处理。
 
-- `IMU_Yaw_Long_Acc_037_M2.IIMULonAccSec`
-  纵向加速度，用于识别重制动和计算 jerk。
-- `Adaptive_Cruise_Disp_Stat.IACCAct376`
-  ACC active 状态，用于确认窗口内 ACC 没有退出。
-- `PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv`
-  驾驶员 override 状态，用于定位 override 结束点，并过滤再次 override 的窗口。
+保留原 MMT 重制动条件：原始加速度 <−2m/s² 持续 ≥0.20s，候选段内
+0.3s 平滑、0.3s 拟合得到的 jerk <−3m/s³。ACC 退出、再次 Override
+或任一路扭矩数据无效时，观察立即截断，不使用截断之后的数据确认事件；
+截断前已完整满足条件的事件保留。每次释放最多计一个 Bad Case。
+原始 H5 末尾无后续数据时也不能使用不存在的数据确认。
 
-这些信号需要在 `config.json` 的 `preprocess_signals` 中配置，代码里的 `REQUIRED_SIGNALS` 也以这 3 个信号为准。
-
-## 3. 窗口定义
-
-override 结束点定义为 `IAccPdlOvrrdAtv` 的下降沿：
-
-- 前一个采样点：`true`
-- 当前采样点：`false`
-
-以下降沿当前采样点作为窗口起点，向后取完整 5 秒：
-
-- `post_override_window_seconds = 5.0`
-
-窗口必须完整存在，且窗口内必须全程满足：
-
-- `IACCAct376 == true`
-- `IAccPdlOvrrdAtv == false`
-
-数据不足 5 秒、ACC 退出、或驾驶员再次 override 的窗口都不参与统计。
-
-## 4. 重制动判定
-
-jerk 使用 0.3 秒加速度居中平均后、0.3 秒居中多点拟合的斜率，不做相邻点差分或二次平滑。
-至少需要 3 个有限值且跨度至少 0.15 秒，不足时为 NaN 并排除；筛选阈值及持续时间不变。
-
-在有效 5 秒窗口内，重制动事件需要同时满足：
-
-- 纵向加速度 `< -2.0`
-- 该状态持续至少 `0.20s`
-- 同一候选段内滤波后 jerk 出现 `< -3.0`
-
-相邻重制动事件间隔不超过 `merge_gap_seconds = 0.50` 时会合并。
-
-## 5. 统计口径
-
-- `All Case Count`：override 结束后 5 秒内识别出的重制动事件数
-- `Bad Case`：同 `All Case Count`，重制动事件本身就是 bad case
-- `Severity Score`：该文件夹内最严重重制动事件的严重度
-
-该指标按事件数统计，不按 override 窗口数统计。一个 5 秒窗口内出现多个重制动事件时会分别计数。
-
-## 6. 输出字段
-
-场景级输出：
-
-- `release_timestamp`
-- `start_timestamp`
-- `end_timestamp`
-- `event_count`
-- `severity`
-
-事件级输出：
-
-- `start_timestamp`
-- `end_timestamp`
-- `duration`
-- `min_acceleration`
-- `min_filtered_jerk`
-- `severity`
-
-## 7. 默认参数
-
-- `post_override_window_seconds = 5.0`
-- 加速度平滑窗口 0.3 秒、jerk 拟合窗口 0.3 秒
-- 旧 `acceleration_smoothing_window=5`、`jerk_smoothing_window=5` 仅兼容默认调用
-- `heavy_brake_accel_threshold = -2.0`
-- `heavy_brake_jerk_threshold = -3.0`
-- `min_brake_duration_seconds = 0.20`
-- `merge_gap_seconds = 0.50`
-
-## 8. 边界说明
-
-- 只统计完整 5 秒窗口。
-- 窗口内只要 ACC 退出或 override 重新变为 true，该窗口直接跳过。
-- 重制动判定口径应与 `acc_heavy_braking_count` 保持同步。
+事件明细记录释放、扭矩突变和变化量达标时间、方向、变化率、变化量、
+重制动起止、最小加速度和 jerk。有效的相邻 H5 可用于完成观察，事件归属
+Override 释放所在的原始 H5。此口径与历史报告不同，需要重新挖掘后比较。

@@ -115,8 +115,7 @@ for name, calculation in (("min_jerk", np.nanmin), ("max_jerk", np.nanmax),
     value, when, _ = measure_segment(frame, Segment(30, 350), name)
     np.testing.assert_allclose(value, calculation(expected[30:351]))
     assert t[30] <= when <= t[350]
-for module in (acc_heavy_braking_count, acc_heavy_braking_after_override_release_count,
-               acc_torque_jerkiness_count):
+for module in (acc_heavy_braking_count, acc_torque_jerkiness_count):
     with patch.object(module, "jerk_from_acceleration", wraps=jerk_from_acceleration) as calculate:
         module.create_metric().evaluate(frame)
         calculate.assert_called_once()

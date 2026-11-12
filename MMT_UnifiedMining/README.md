@@ -5,6 +5,10 @@ ABS/TCS/VSE-correlated ACC exit metrics and all 12 driving-uninterfered-
 acceleration metrics have been removed from mining, statistics and comparison
 reports. Independent TCS/VSE activation counts remain enabled.
 
+Override 后重制动已增加实车扭矩突变校验，释放后 200ms 内须开始，
+突变后最多观察 1s；详见
+[指标说明](metrics/can/instruction/acc_heavy_braking_after_override_release_count.md)。
+
 All five APA metrics (parking/gear-switch jerkiness, arbitration loss,
 parking completion and rollback) and `acc_brake_rapid_toggle_decel_jump_count`
 have been removed, including their dedicated signals, instructions and debug

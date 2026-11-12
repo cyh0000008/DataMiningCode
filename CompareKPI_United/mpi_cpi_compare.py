@@ -282,7 +282,7 @@ METRIC_STANDARDS: dict[str, str] = {
     "重制动": "ACC active且无override；主规则：1.6s内降幅>=3.0m/s2、斜率>=3.0m/s3，加速度<=-2.0m/s2持续>=0.20s，滤波jerk<=-2.0m/s3；补充：深短尖峰<=-2.7m/s2、降幅>=2.6m/s2、驻留<=0.12s、jerk<=-10，或深持续制动<=-2.7m/s2、降幅>=1.3m/s2、驻留>=0.35s、jerk<=-5",
     "顿挫": "仅统计排除Override后顿挫（释放后2s）、进Override后顿挫及起步顿挫（ACC激活后1s）场景后的顿挫；ACC active且无override，平滑加速度振荡幅值>=0.75、符号翻转>=1、候选时长>0.5s且<=4s，并通过驱动/制动扭矩校验",
     "Override后顿挫": "override释放后完整2s窗口（数据不足2s丢弃），窗口内持续ACC active且无再次override；按顿挫规则检测，按窗口计数",
-    "Override后重制动": "override释放后5s内，加速度<-2.0m/s2且jerk<-3.0m/s3，持续>=0.20s",
+    "Override后重制动": "释放后200ms内扭矩突变及重制动开始；制动扭矩速率≥2500Nm/s且增加≥120Nm，或驱动扭矩速率≤-1500Nm/s且减少≥80Nm；加速度<-2m/s2、jerk<-3m/s3，持续≥0.20s；突变后观察1s",
     "行车断握手": "ACC active且仲裁状态=2，持续>=5s",
     "进Override后顿挫": "ACC active且override中，油门>0，按顿挫规则；不限制制动请求加速度",
     "起步顿挫": "起步1s窗口内，按顿挫规则",
@@ -324,6 +324,12 @@ for _powertrain in POWERTRAIN_TYPES:
         _fluct_upper = 0.6 if _is_ice else 0.3
         _distance_range = "2.5~4.5m" if _is_j6b and _is_ice else "3~4m"
         _standards = {
+            "Override后重制动": (
+                "释放后200ms内扭矩突变和重制动开始；制动速率≥2500Nm/s且增≥120Nm或驱动速率≤-1500Nm/s且降≥80Nm；"
+                + ("平滑加速度<-2m/s2且jerk<-3m/s3同时持续≥0.20s" if _is_j6b else
+                   "原始加速度<-2m/s2持续≥0.20s，段内平滑jerk<-3m/s3")
+                + "；突变后最多1s"
+            ),
             "起步加速建立时间": f"<={_build_upper:g}s",
             "跟车起步舒适性": f"最大jerk<={2.0 if _is_j6b else 1.5:g}m/s3",
             "坡道稳速抖动": (

@@ -28,6 +28,8 @@ CAN_SIGNALS = {
     "Adaptive_Cruise_Disp_Stat.IACCDrvrSeltdSpd": ("Set speed", "km/h"),
     "Adaptive_Cruise_Disp_Stat.IACCAct376": ("ACC active", "state"),
     "PPEI_Propulsion_General_Data_1_0C2_M.IAccPdlOvrrdAtv": ("Pedal override", "state"),
+    "PPEI_Engine_Torque_Status_4_08D_M.IActAxleTrq": ("Actual drive torque", "Nm"),
+    "PPEI_Chassis_General_Status_2.ICSTBATS_TrqVl": ("Actual brake torque", "Nm"),
 }
 COLORS = ("#1677c8", "#db463f", "#19865b", "#9d55b5", "#b07716", "#487580")
 

@@ -522,6 +522,8 @@ def evidence_markers(case: CaseRow) -> List[Tuple[str, float]]:
         "positive_jerk_peak_time_s": "正jerk峰值",
         "negative_jerk_peak_time_s": "负jerk峰值",
         "release_timestamp": "override释放",
+        "torque_onset_time_s": "扭矩突变开始",
+        "torque_confirm_time_s": "扭矩变化达标",
         "stop_time_s": "刹停时刻",
         "stable_window_start_time_s": "稳定取值起点",
         "stable_window_end_time_s": "稳定取值终点",

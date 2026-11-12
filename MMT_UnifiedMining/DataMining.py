@@ -756,6 +756,7 @@ def calculate_metric_code_hash(metrics_by_pipeline: dict[str, list[MetricModule]
         base_dir / "signal_lib.py",
         base_dir / "longitudinal_preprocessor.py",
         base_dir / "can_unp_gate.py",
+        base_dir / "override_braking_torque.py",
         base_dir / "metrics" / "can" / "code" / "acc_unreasonable_low_speed_count.py",
     }
     for metrics in metrics_by_pipeline.values():
@@ -1342,6 +1343,8 @@ def process_can_folder(
         missing_signals = session.missing_signals(required_signals) if session is not None else required_signals
         if missing_signals:
             details = [f"缺少信号: {', '.join(missing_signals)}"]
+            if metric.name == "acc_heavy_braking_after_override_release_count":
+                details[0] = "未统计：" + details[0]
             statistics = {
                 "All Case Count": 0,
                 "Bad Case": 0,
@@ -1354,7 +1357,7 @@ def process_can_folder(
                 result=False,
                 details=details,
                 statistics=statistics,
-                mileage_km=folder_mileage_km,
+                mileage_km=0.0 if metric.name == "acc_heavy_braking_after_override_release_count" else folder_mileage_km,
                 run_timestamp=run_timestamp,
                 segment_start_timestamp=segment_start_timestamp,
                 replace_existing=replace_existing_results,
@@ -1400,6 +1403,8 @@ def process_can_folder(
         except Exception as exc:
             unp_skipped = isinstance(exc, UnpAlignmentError)
             failure_detail = ("未统计：Topic UNP 缺失或无法对齐；" if unp_skipped else "执行失败: ") + str(exc)
+            if not unp_skipped and metric.name == "acc_heavy_braking_after_override_release_count":
+                failure_detail = "未统计：" + failure_detail
             csv_path = save_metric_result(
                 pipeline=pipeline,
                 metric=metric,
@@ -1407,7 +1412,7 @@ def process_can_folder(
                 result=False,
                 details=[failure_detail],
                 statistics={},
-                mileage_km=0.0 if unp_skipped else folder_mileage_km,
+                mileage_km=0.0 if unp_skipped or metric.name == "acc_heavy_braking_after_override_release_count" else folder_mileage_km,
                 run_timestamp=run_timestamp,
                 segment_start_timestamp=segment_start_timestamp,
                 replace_existing=replace_existing_results,
@@ -1473,6 +1478,7 @@ def build_can_folder_context(
         "context_folder_paths": context_folder_paths,
         "h5_files": h5_files,
         "primary_h5_file": primary_h5_file,
+        "primary_end_timestamp": primary_h5_range[1] if primary_h5_range else None,
         "additional_h5_files": additional_h5_files,
         "context_h5_files": [primary_h5_file] + additional_h5_files if primary_h5_file else [],
         "context_end_timestamp": context_end_timestamp,
@@ -2138,7 +2144,11 @@ def save_metric_result(
         "Metric Value Sum": _safe_float(statistics.get("Metric Value Sum", 0.0)),
         "Metric Value Count": _safe_int(statistics.get("Metric Value Count", 0)),
     }
-    if details and str(details[0]).startswith("未统计：Topic UNP"):
+    if details and (
+        str(details[0]).startswith("未统计：Topic UNP")
+        or (metric.name == "acc_heavy_braking_after_override_release_count"
+            and str(details[0]).startswith("未统计："))
+    ):
         row["检查结果"] = "未统计"
 
     if replace_existing and output_path.exists():
@@ -2319,6 +2329,10 @@ def generate_unified_report(
                 "output_prefix": prefix,
                 "unp_skipped": len(unp_skipped_rows),
                 "all_unp_skipped": len(unp_skipped_rows) == len(csv_data),
+                "all_override_braking_unavailable": (
+                    metric_name == "acc_heavy_braking_after_override_release_count"
+                    and all(str(row.get("符合要求的内容", "")).startswith("未统计：") for row in csv_data)
+                ),
                 "unp_skip_details": "\n".join(
                     f"{row.get('文件夹路径', '')}: {row.get('符合要求的内容', '')}"
                     for row in unp_skipped_rows
@@ -2368,7 +2382,7 @@ def generate_unified_report(
 
         mpi_text = ""
         cpi_text = ""
-        if row_data["all_unp_skipped"]:
+        if row_data["all_unp_skipped"] or row_data["all_override_braking_unavailable"]:
             mpi_text = "未统计" if metric_category == METRIC_CATEGORY_MPI else ""
             cpi_text = "未统计" if metric_category != METRIC_CATEGORY_MPI else ""
         elif metric_category == METRIC_CATEGORY_MPI:

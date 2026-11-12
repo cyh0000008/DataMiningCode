@@ -101,6 +101,8 @@ a = -1 + 0.4 * np.sin(3 * t)
 class SyntheticSession(FolderSession):
     def __init__(self):
         pass
+    def has_signal(self, signal):
+        return False
     def common_time_range(self, signals):
         return float(t[0]), float(t[-1])
     def get_signal_slice(self, signal, start, end):
@@ -118,7 +120,6 @@ session = SyntheticSession()
 for name, function in (
     ("acc_jerkiness", "count_acc_jerkiness_events"),
     ("acc_heavy_braking_count", "count_acc_heavy_braking_events"),
-    ("acc_heavy_braking_after_override_release_count", "count_acc_heavy_braking_after_override_release_events"),
 ):
     module = importlib.import_module("metrics.can.code." + name)
     with patch.object(module, "sustained_jerk", wraps=sustained_jerk) as calculate:

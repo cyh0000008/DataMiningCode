@@ -56,6 +56,7 @@ class StreamingReportWriter:
                 "skipped_count": 0,
                 "distance_by_path": {},
                 "result_count": 0,
+                "successful_count": 0,
                 "detail_count": 0,
                 "measurement_sum": 0.0,
                 "measurement_count": 0,
@@ -137,7 +138,10 @@ class StreamingReportWriter:
                 summary["total_cases"],
                 summary["bad_cases"],
                 summary["skipped_count"],
-                measurement_summary_display(summary)
+                "未统计"
+                if metric_name == "acc_heavy_braking_after_override_release_count"
+                and summary["result_count"] > 0 and summary["successful_count"] == 0
+                else measurement_summary_display(summary)
                 if self.metric_modes.get(metric_name) == "measurement_mean"
                 else metric_value_display(
                     summary["category"],
@@ -206,6 +210,8 @@ class StreamingReportWriter:
         summary["total_cases"] += result.total_cases
         summary["bad_cases"] += result.bad_cases
         summary["result_count"] += 1
+        if result_status(result) not in ("SKIPPED", "ERROR"):
+            summary["successful_count"] += 1
         if result.result_mode == "measurement_mean":
             values = [
                 float(event.values["measurement_value"])
@@ -324,7 +330,10 @@ def write_summary_sheet(
             row=row_index,
             column=7,
             value=(
-                measurement_values_display(measurement_values)
+                "未统计"
+                if metric_name == "acc_heavy_braking_after_override_release_count"
+                and results and all(result_status(item) in ("SKIPPED", "ERROR") for item in results)
+                else measurement_values_display(measurement_values)
                 if measurement_values or any(item.result_mode == "measurement_mean" for item in results)
                 else metric_value_display(category, total_cases, bad_cases, distance_km)
             ),
