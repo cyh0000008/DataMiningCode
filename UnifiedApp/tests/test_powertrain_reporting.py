@@ -61,7 +61,7 @@ class PowertrainReportingTests(unittest.TestCase):
             self.addCleanup(form.close)
             self.assertEqual(
                 [form.powertrain_combo.itemText(i) for i in range(form.powertrain_combo.count())],
-                ["ICE", "PHEV", "BEV"],
+                ["ICE", "PHEV", "BEV", "EREV"],
             )
             form.powertrain_combo.setCurrentText(powertrain)
             form.vehicle_edit.setText("TEST-2-CAR001")
@@ -106,8 +106,8 @@ config_path = Path(sys.argv[1])
 profile = sys.argv[2]
 powertrain = json.loads(config_path.read_text(encoding="utf-8"))["powertrain_type"]
 from powertrain_utils import value_for_powertrain
-for kind, expected in (("ICE", 10), ("PHEV", 20), ("BEV", 30)):
-    assert value_for_powertrain(kind, ice_value=10, phev_value=20, bev_value=30) == expected
+for kind, expected in (("ICE", 10), ("PHEV", 20), ("BEV", 30), ("EREV", 40)):
+    assert value_for_powertrain(kind, ice_value=10, phev_value=20, bev_value=30, erev_value=40) == expected
 if profile == "J6B":
     from DataMining import load_metrics
     from metric_utils import Segment

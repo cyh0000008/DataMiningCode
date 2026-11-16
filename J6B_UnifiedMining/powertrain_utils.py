@@ -4,7 +4,7 @@ from typing import TypeVar
 import warnings
 
 
-POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV")
+POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV", "EREV")
 T = TypeVar("T")
 
 
@@ -21,9 +21,11 @@ def normalize_powertrain_type(value: object) -> str:
     return powertrain_type
 
 
-def value_for_powertrain(powertrain_type: str, *, ice_value: T, phev_value: T, bev_value: T) -> T:
+def value_for_powertrain(powertrain_type: str, *, ice_value: T, phev_value: T, bev_value: T, erev_value: T) -> T:
     if powertrain_type == "PHEV":
         return phev_value
+    if powertrain_type == "EREV":
+        return erev_value
     if powertrain_type == "BEV":
         return bev_value
     if powertrain_type == "ICE":

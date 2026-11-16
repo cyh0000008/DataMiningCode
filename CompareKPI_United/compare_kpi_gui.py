@@ -176,7 +176,7 @@ class CompareKpiApp:
         log_frame.columnconfigure(0, weight=1)
         self.log_text = self._make_log_widget(log_frame)
         self._log("base 可以留空；target 必须选择文件或文件夹。")
-        self._log("动力形式可选 ICE、PHEV、BEV，报告按所选类型读取对应的独立筛选标准。")
+        self._log("动力形式可选 ICE、PHEV、BEV、EREV，报告按所选类型读取对应的独立筛选标准。")
         self._log("输出固定写入：%s" % output_dir())
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: StringVar, optional: bool) -> None:

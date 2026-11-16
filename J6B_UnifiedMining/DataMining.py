@@ -211,7 +211,7 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     if "input_path" not in config:
         raise KeyError("config.json must contain 'input_path'")
     if "powertrain_type" not in config:
-        raise KeyError("config.json must contain 'powertrain_type' ('ICE', 'PHEV' or 'BEV')")
+        raise KeyError("config.json must contain 'powertrain_type' ('ICE', 'PHEV', 'BEV' or 'EREV')")
     config["powertrain_type"] = normalize_powertrain_type(config["powertrain_type"])
     if not isinstance(config.get("bad_case_signal_plots", False), bool):
         raise ValueError("bad_case_signal_plots must be true or false")

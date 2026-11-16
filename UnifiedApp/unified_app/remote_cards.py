@@ -229,7 +229,7 @@ class RemoteCards:
                 elements += self._select(session, name, label, [("开启", "开启"), ("关闭", "关闭")],
                                          "开启" if value else "关闭")
             elif field in ("powertrain_type", "metric_signal_scope", "resume_mode"):
-                options = {"powertrain_type": ["ICE", "PHEV", "BEV"],
+                options = {"powertrain_type": ["ICE", "PHEV", "BEV", "EREV"],
                            "metric_signal_scope": ["all", "debugcan_only", "pcan_ccan_only"],
                            "resume_mode": ["auto", "never"]}[field]
                 elements += self._select(session, name, label, [(v, v) for v in options], value)

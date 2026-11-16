@@ -118,8 +118,9 @@ REPORT_PROFILES = (REPORT_PROFILE_J6B, REPORT_PROFILE_MMT)
 
 POWERTRAIN_PHEV = "PHEV"
 POWERTRAIN_BEV = "BEV"
+POWERTRAIN_EREV = "EREV"
 POWERTRAIN_ICE = "ICE"
-POWERTRAIN_TYPES = (POWERTRAIN_ICE, POWERTRAIN_PHEV, POWERTRAIN_BEV)
+POWERTRAIN_TYPES = (POWERTRAIN_ICE, POWERTRAIN_PHEV, POWERTRAIN_BEV, POWERTRAIN_EREV)
 DEFAULT_POWERTRAIN_TYPE = POWERTRAIN_PHEV
 
 RELEASE_THRESHOLDS = {
@@ -313,6 +314,7 @@ PROFILE_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, str]] = {
 POWERTRAIN_METRIC_STANDARD_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
     POWERTRAIN_PHEV: {},
     POWERTRAIN_BEV: {},
+    POWERTRAIN_EREV: {},
     POWERTRAIN_ICE: {},
 }
 
@@ -363,7 +365,7 @@ def normalize_powertrain_type(value: str) -> str:
         return POWERTRAIN_PHEV
     if key in POWERTRAIN_TYPES:
         return key
-    raise ValueError(f"未知动力形式：{value}，可选：ICE、PHEV 或 BEV")
+    raise ValueError(f"未知动力形式：{value}，可选：ICE、PHEV、BEV 或 EREV")
 
 
 def resolve_metric_standard(
@@ -1647,7 +1649,7 @@ def apply_metric_standards(
                 continue
             standard = f"{selected_powertrain}：{template_standard}"
         ws.cell(row, 4).value = re.sub(
-            r"^(?:PHEV/BEV|PHEV|BEV|ICE)\s*[:：]\s*", "", standard
+            r"^(?:PHEV/BEV|PHEV|BEV|EREV|ICE)\s*[:：]\s*", "", standard
         )
 
 
@@ -1754,13 +1756,15 @@ def choose_powertrain_type(value: str | None) -> str:
 
     if sys.stdin.isatty():
         while True:
-            choice = input("请选择动力形式：1) ICE  2) PHEV  3) BEV（默认 2）：").strip()
+            choice = input("请选择动力形式：1) ICE  2) PHEV  3) BEV  4) EREV（默认 2）：").strip()
             if not choice:
                 return DEFAULT_POWERTRAIN_TYPE
             if choice == "1":
                 return POWERTRAIN_ICE
             if choice == "2":
                 return POWERTRAIN_PHEV
+            if choice == "4":
+                return POWERTRAIN_EREV
             if choice == "3":
                 return POWERTRAIN_BEV
             try:
@@ -1770,7 +1774,7 @@ def choose_powertrain_type(value: str | None) -> str:
 
     print(
         "未检测到交互输入，默认使用 PHEV；"
-        "如需其他动力形式，请加 --powertrain-type ICE 或 BEV。"
+        "如需其他动力形式，请加 --powertrain-type ICE、BEV 或 EREV。"
     )
     return DEFAULT_POWERTRAIN_TYPE
 
@@ -2048,7 +2052,7 @@ def main() -> None:
         "--powertrain-type",
         choices=POWERTRAIN_TYPES,
         default=None,
-        help="动力形式：ICE、PHEV 或 BEV；不传时交互选择",
+        help="动力形式：ICE、PHEV、BEV 或 EREV；不传时交互选择",
     )
     parser.add_argument("--details-sheet", action="store_true", help="保留“信号对照表”明细 sheet")
     parser.add_argument("--base-vehicle", default=None, help="覆盖 base 表头车型")

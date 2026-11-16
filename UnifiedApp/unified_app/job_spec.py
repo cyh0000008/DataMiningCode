@@ -13,7 +13,7 @@ JOB_KIND_J6B = "j6b"
 JOB_KIND_MMT = "mmt"
 JOB_KIND_COMPARE = "compare"
 JOB_KIND_LCC_SYNC = "lcc_sync"
-POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV")
+POWERTRAIN_TYPES = ("ICE", "PHEV", "BEV", "EREV")
 
 
 def normalize_powertrain_type(value: str) -> str:
@@ -22,7 +22,7 @@ def normalize_powertrain_type(value: str) -> str:
         warnings.warn("旧动力形式 PHEV/BEV 已迁移为 PHEV；纯电车辆请重新选择 BEV。", UserWarning)
         value = "PHEV"
     if value not in POWERTRAIN_TYPES:
-        raise ValueError("动力形式必须为 ICE、PHEV 或 BEV")
+        raise ValueError("动力形式必须为 ICE、PHEV、BEV 或 EREV")
     return value
 
 JOB_KIND_LABELS = {

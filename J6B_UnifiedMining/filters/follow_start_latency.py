@@ -20,7 +20,7 @@ class FollowStartLatencyMetric(BaseMetric):
 
     def evaluate(self, frame: SignalFrame) -> MetricResult:
         upper = value_for_powertrain(
-            self.powertrain_type, ice_value=3.5, phev_value=3.0, bev_value=3.0,
+            self.powertrain_type, ice_value=3.5, phev_value=3.0, bev_value=3.0, erev_value=3.0,
         )
         segments = find_scene_segments(
             frame, self.scene, minimum_observation_s=upper,
