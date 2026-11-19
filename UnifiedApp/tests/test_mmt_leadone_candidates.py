@@ -128,6 +128,7 @@ assert "following_candidates" not in parsed
 from slope_scene_utils import find_steady_slope_segments
 data = [frame(i, target(1), target(2, x=10., y=6.), speed=20.) for i in range(121)]
 for f in data:
+    f["_powertrain_type"] = "PHEV"
     f["unp_frame_data"]["curvature_info"] = {"is_curv_v_limit_enable": True, "max_curvature": .005}
     f["matched_msd_control"] = {"slope_acc": 0.}
 for name in ("curvature_min_acc", "curvature_min_jerk", "curvature_min_speed"):

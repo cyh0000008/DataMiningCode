@@ -152,7 +152,8 @@ All three slope CPI metrics share `slope_scene_utils.find_steady_slope_segments`
 Retain the normal NP/no-near-front/moving/slope/curvature-limit/red-light/data gates,
 but require a finite positive UNP SetSpeed constant within `1e-6` of the candidate's
 first value. Topic `cruise_velocity` and chassis `vehicle_speed_average` are m/s:
-speed must remain within SetSpeed +/- `2/3.6 m/s` for a full second to enter.
+speed must remain within the powertrain's speed-fluctuation threshold
+(ICE `0.6 m/s`, PHEV/BEV/EREV `0.3 m/s`) for a full second to enter.
 The confirming sample starts the measured segment; the preceding dwell is excluded.
 Every measured segment must last at least 5 seconds (time-based, not frame-count-based).
 No near front object is allowed; if a forward object exists, its distance must be strictly
@@ -160,10 +161,13 @@ greater than 20 m and its `crash_risk_ttc` strictly greater than 8 s. The neares
 forward object within the lane corridor and any distinct planning-selected leadone
 object are checked independently; equality to either threshold fails.
 
-Every measured sample must stay within SetSpeed +/- 2 km/h. The first sample
-outside that band ends the segment before that sample and resets the one-second
-dwell. Only steady segments lasting at least five seconds are counted. Base
-conditions and SetSpeed changes also end the segment. Dashboard speed fluctuation
+A deviation beyond that threshold begins a two-second observation. If speed
+returns within the threshold before two seconds, the excursion remains in the
+measured segment as a speed fluctuation. If it persists for two seconds, the
+segment ends before the first deviating sample; a new segment needs a fresh
+one-second dwell. An unresolved excursion at the file end or a base-condition
+change is excluded. Only segments with at least five measured seconds count.
+Dashboard speed fluctuation
 is converted from km/h to m/s before comparison with the powertrain threshold;
 the displayed maximum/minimum speeds and their difference remain in km/h.
 Preserve primary-file ownership across concatenated context.

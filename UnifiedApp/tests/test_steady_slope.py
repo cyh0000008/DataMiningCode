@@ -132,25 +132,32 @@ for count, expected in ((60, []), (61, [(10, 60)])):
 data = deepcopy(original)
 change(data, speed_field, slice(0, 30), 8.)
 assert select(data) == [(40, 200)]
-for value in (10. - 2 / 3.6, 10. + 2 / 3.6):
+entry_delta = 0.3 if profile == "MMT" else 2 / 3.6
+for value in (10. - entry_delta, 10. + entry_delta):
     data = deepcopy(original)
     change(data, speed_field, slice(None), value)
     assert select(data) == [(10, 200)]
 data = deepcopy(original)
-change(data, speed_field, slice(None), 10. + 2.01 / 3.6)
+change(data, speed_field, slice(None), 10. + entry_delta + 0.01)
 assert select(data) == []
 # A pre-entry excursion restarts the full dwell period.
 data = deepcopy(original)
 change(data, speed_field, 5, 8.)
 assert select(data) == [(16, 200)]
-# MMT measures only the steady part; recovery requires a fresh dwell.
+# A brief excursion is measured; persistent departure is cut at its start.
 data = deepcopy(original)
 change(data, speed_field, slice(70, None), 8.)
 assert select(data) == ([(10, 69)] if profile == "MMT" else [(10, 200)])
 if profile == "MMT":
     data = deepcopy(original)
-    change(data, speed_field, slice(70, 90), 8.)
-    assert select(data) == [(10, 69), (100, 200)]
+    change(data, speed_field, slice(70, 80), 9.5)
+    assert select(data) == [(10, 200)]
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, 95), 9.5)
+    assert select(data) == [(10, 69), (105, 200)]
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, None), 9.5)
+    assert select(data) == [(10, 69)]  # unresolved tail is excluded
     data = deepcopy(original)
     change(data, speed_field, slice(40, None), 8.)
     assert select(data) == []  # less than five measured seconds

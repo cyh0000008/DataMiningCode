@@ -1,5 +1,5 @@
 import math
-from slope_scene_utils import find_steady_slope_segments
+from slope_scene_utils import find_steady_slope_segments, slope_speed_threshold
 import os
 import re
 import traceback
@@ -57,8 +57,7 @@ def __run_haoran_data_run__(comprehensive_frames: List[Dict]) -> Tuple[bool, Lis
 def _core_process(comprehensive_frames: List[Dict]) -> Tuple[bool, List[str], Dict]:  # 修复7：改为Any，兼容字符串/字典
 
     check_result: bool = False
-    powertrain_type = get_powertrain_type(comprehensive_frames)
-    fluct_threshold = value_for_powertrain(powertrain_type, ice_value=0.6, phev_value=0.3, bev_value=0.3, erev_value=0.3)
+    fluct_threshold = slope_speed_threshold(comprehensive_frames)
 
     # 3. 查找所有连续风险段落（基于_unp_planning_info的段落顺序）
     risk_segments = _find_risk_segments(comprehensive_frames)
