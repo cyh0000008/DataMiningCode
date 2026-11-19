@@ -510,17 +510,19 @@ def acc_control_active(frame: SignalFrame) -> np.ndarray:
 def find_scene_segments(
     frame: SignalFrame, scene: str, minimum_observation_s: Optional[float] = None,
     require_ego_start_before_override: bool = False,
+    powertrain_type: str = "PHEV",
 ) -> List[Segment]:
     key = (
         "scene_segments", str(scene), frame.primary_length,
         frame.has_continuous_previous, minimum_observation_s,
-        require_ego_start_before_override,
+        require_ego_start_before_override, powertrain_type,
     )
     return list(
         frame_cached(
             frame, key,
             lambda: _find_scene_segments_uncached(
                 frame, scene, minimum_observation_s, require_ego_start_before_override,
+                powertrain_type,
             ),
         )
     )
@@ -529,6 +531,7 @@ def find_scene_segments(
 def _find_scene_segments_uncached(
     frame: SignalFrame, scene: str, minimum_observation_s: Optional[float] = None,
     require_ego_start_before_override: bool = False,
+    powertrain_type: str = "PHEV",
 ) -> List[Segment]:
     if scene == "follow_stop":
         return filter_segments_for_primary(frame, follow_stop_segments(frame))
@@ -542,7 +545,7 @@ def _find_scene_segments_uncached(
     if scene == "stop2go":
         return filter_segments_for_primary(frame, stop2go_segments(frame))
     if scene == "slope_no_front":
-        return slope_no_front_segments(frame)
+        return slope_no_front_segments(frame, powertrain_type)
     if scene == "curvature":
         return filter_segments_for_primary(frame, curvature_segments(frame))
     raise KeyError("Unknown scene: %s" % scene)
@@ -689,8 +692,14 @@ def stop2go_segments(frame: SignalFrame) -> List[Segment]:
     return merge_overlapping_segments(segments)
 
 
-def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
+def slope_no_front_segments(frame: SignalFrame, powertrain_type: str = "PHEV") -> List[Segment]:
+    from powertrain_utils import value_for_powertrain
+
     min_duration_s = 5.0
+    speed_threshold = value_for_powertrain(
+        powertrain_type, ice_value=0.6, phev_value=0.3, bev_value=0.3, erev_value=0.3,
+    )
+    excursion_observation_s = 2.0
     speed = frame.col("ego_speed_mps", 0.0).astype(float)
     set_speed = frame.col("set_speed", np.inf).astype(float)
     front_present = np.logical_or(
@@ -718,7 +727,6 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
             np.abs(frame.col("slope_acc", 0.0).astype(float)) >= 0.1,
             front_clear,
             frame.col("curv_speed_limit", 100.0).astype(float) >= speed,
-            speed <= np.maximum(set_speed / 3.6, 0.0) + 3.0,
             np.isfinite(speed),
             np.isfinite(set_speed),
             set_speed > 0.0,
@@ -729,28 +737,45 @@ def slope_no_front_segments(frame: SignalFrame) -> List[Segment]:
     candidate_start = None
     dwell_start = None
     steady_start = None
+    excursion_start = None
     for i in range(len(frame.time_s) + 1):
         valid = i < len(frame.time_s) and mask[i]
         changed = valid and reference is not None and abs(set_speed[i] - reference) > 1e-6
         if not valid or changed:
             if steady_start is not None:
-                segment = Segment(steady_start, i - 1)
+                end = (excursion_start if excursion_start is not None else i) - 1
+                segment = Segment(steady_start, end)
                 primary_length = frame.primary_length if frame.primary_length is not None else frame.length
                 owned = (
                     candidate_start < primary_length
                     and not (frame.has_continuous_previous and candidate_start == 0)
                 )
-                if owned and segment.duration(frame.time_s) >= min_duration_s - 1e-9:
+                if owned and end >= steady_start and segment.duration(frame.time_s) >= min_duration_s - 1e-9:
                     segments.append(segment)
-            reference = dwell_start = steady_start = None
+            reference = dwell_start = steady_start = excursion_start = None
         if not valid:
             continue
         if reference is None:
             reference = set_speed[i]
             candidate_start = i
+        in_band = abs(speed[i] - set_speed[i] / 3.6) <= speed_threshold + 1e-9
         if steady_start is not None:
+            if in_band:
+                excursion_start = None
+            elif excursion_start is None:
+                excursion_start = i
+            elif frame.time_s[i] - frame.time_s[excursion_start] >= excursion_observation_s - 1e-9:
+                end = excursion_start - 1
+                segment = Segment(steady_start, end)
+                primary_length = frame.primary_length if frame.primary_length is not None else frame.length
+                owned = candidate_start < primary_length and not (
+                    frame.has_continuous_previous and candidate_start == 0
+                )
+                if owned and end >= steady_start and segment.duration(frame.time_s) >= min_duration_s - 1e-9:
+                    segments.append(segment)
+                reference = dwell_start = steady_start = excursion_start = None
             continue
-        if abs(speed[i] - set_speed[i] / 3.6) <= 2.0 / 3.6 + 1e-9:
+        if in_band:
             if dwell_start is None:
                 dwell_start = i
             if frame.time_s[i] - frame.time_s[dwell_start] >= 1.0 - 1e-9:

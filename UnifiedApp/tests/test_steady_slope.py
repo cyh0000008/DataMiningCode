@@ -132,7 +132,7 @@ for count, expected in ((60, []), (61, [(10, 60)])):
 data = deepcopy(original)
 change(data, speed_field, slice(0, 30), 8.)
 assert select(data) == [(40, 200)]
-entry_delta = 0.3 if profile == "MMT" else 2 / 3.6
+entry_delta = 0.3
 for value in (10. - entry_delta, 10. + entry_delta):
     data = deepcopy(original)
     change(data, speed_field, slice(None), value)
@@ -147,7 +147,7 @@ assert select(data) == [(16, 200)]
 # A brief excursion is measured; persistent departure is cut at its start.
 data = deepcopy(original)
 change(data, speed_field, slice(70, None), 8.)
-assert select(data) == ([(10, 69)] if profile == "MMT" else [(10, 200)])
+assert select(data) == [(10, 69)]
 if profile == "MMT":
     data = deepcopy(original)
     change(data, speed_field, slice(70, 80), 9.5)
@@ -225,6 +225,18 @@ if profile == "MMT":
         _, _, stats = module._core_process(data)
         assert stats["All Case Count"] == 1 and stats["Bad Case"] == 1, stats
 else:
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, 80), 10.5)
+    assert select(data) == [(10, 200)]
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, 80), 13.5)
+    assert select(data) == [(10, 200)]  # even a large brief spike is observed
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, 95), 10.5)
+    assert select(data) == [(10, 69), (105, 200)]
+    # ICE allows 0.6 m/s; the same 0.5 m/s departure stays in its steady band.
+    ice_segments = find_scene_segments(data, "slope_no_front", powertrain_type="ICE")
+    assert [(s.start, s.end) for s in ice_segments] == [(10, 200)]
     def part(start, end):
         return SignalFrame("synthetic", "", {}, {
             key: values[start:end].copy() for key, values in original.fields.items()
@@ -241,7 +253,7 @@ else:
     change(context_only, valid_field, slice(0, 20), 0.)
     assert select(context_only) == []
     data = deepcopy(original)
-    change(data, speed_field, slice(70, None), 8.)
+    change(data, speed_field, slice(70, 80), 10.8)
     change(data, "acceleration_total", slice(0, 10), 100.)
     change(data, "acceleration_total", slice(70, None), 4.)
     for name in names:
