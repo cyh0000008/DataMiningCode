@@ -192,7 +192,7 @@ def _calc_segment_max_vel_fluct(segment: List[Dict]) -> Optional[Dict]:
         "max_vel_chassis_time": maximum_time,
         "min_vel_chassis": minimum,
         "min_vel_chassis_time": minimum_time,
-        "vel_chassis_diff": maximum - minimum,
+        "vel_chassis_diff": (maximum - minimum) / 3.6,  # dashboard km/h -> m/s
         "max_vel_diff": maximum - minimum,
         "set_speed": segment[0]["unp_frame_data"]["Acc_info"]["SetSpeed"] * 3.6,
     }

@@ -143,10 +143,17 @@ assert select(data) == []
 data = deepcopy(original)
 change(data, speed_field, 5, 8.)
 assert select(data) == [(16, 200)]
-# A post-entry excursion is retained, including sustained off-target speed.
+# MMT measures only the steady part; recovery requires a fresh dwell.
 data = deepcopy(original)
 change(data, speed_field, slice(70, None), 8.)
-assert select(data) == [(10, 200)]
+assert select(data) == ([(10, 69)] if profile == "MMT" else [(10, 200)])
+if profile == "MMT":
+    data = deepcopy(original)
+    change(data, speed_field, slice(70, 90), 8.)
+    assert select(data) == [(10, 69), (100, 200)]
+    data = deepcopy(original)
+    change(data, speed_field, slice(40, None), 8.)
+    assert select(data) == []  # less than five measured seconds
 # One invalid slope frame always splits; no twenty-frame recovery.
 data = deepcopy(original)
 change(data, valid_field, 100, invalid)
@@ -186,13 +193,14 @@ if profile == "MMT":
     for frame in data[5:]:
         frame["_sequence_meta"] = {"source_index": 1}
     assert select(data) == [(10, 200)]
-    # Entire confirmed segment is measured; do not crop out later fluctuations.
+    # Dashboard km/h is converted to m/s for the threshold comparison.
     data = deepcopy(original)
     for frame in data[70:]:
         frame["matched_body"]["velocity_on_dashboard"] = 33.
     segment = modules[2]._find_risk_segments(data)[0]
     measured = modules[2]._calc_segment_max_vel_fluct(segment)
-    assert measured["vel_chassis_diff"] == 3., measured
+    assert abs(measured["vel_chassis_diff"] - 3. / 3.6) < 1e-9, measured
+    assert measured["max_vel_diff"] == 3., measured
     data = deepcopy(original)
     for i, frame in enumerate(data):
         frame["matched_body"]["velocity_on_dashboard"] = 33. if i >= 70 else 36.

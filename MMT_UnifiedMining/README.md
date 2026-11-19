@@ -160,13 +160,13 @@ greater than 20 m and its `crash_risk_ttc` strictly greater than 8 s. The neares
 forward object within the lane corridor and any distinct planning-selected leadone
 object are checked independently; equality to either threshold fails.
 
-Once entered, speed outside the entry band is still included until an original
-base condition fails or SetSpeed changes. Then terminate immediately and require
-a fresh one-second dwell. Remove the old SetSpeed-crossing requirement and
-20-frame slope-recovery exception. All three measurements use the whole confirmed
-segment, without additional dashboard-speed cropping. Their existing formulas,
-units and Bad Case thresholds remain unchanged (including dashboard full-range
-speed fluctuation). Preserve primary-file ownership across concatenated context.
+Every measured sample must stay within SetSpeed +/- 2 km/h. The first sample
+outside that band ends the segment before that sample and resets the one-second
+dwell. Only steady segments lasting at least five seconds are counted. Base
+conditions and SetSpeed changes also end the segment. Dashboard speed fluctuation
+is converted from km/h to m/s before comparison with the powertrain threshold;
+the displayed maximum/minimum speeds and their difference remain in km/h.
+Preserve primary-file ownership across concatenated context.
 
 ## Stable follow-stop distance
 

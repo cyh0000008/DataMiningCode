@@ -53,9 +53,14 @@ def find_steady_slope_segments(
             if frame.get("_sequence_meta", {}).get("source_index", 0) != 0:
                 continue
             reference = set_speed
+        # Topic cruise_velocity and vehicle_speed_average are both m/s.
+        # Every measured sample must remain in the SetSpeed steady band.
+        if abs(speed - set_speed) > 2.0 / 3.6 + 1e-9:
+            finish(i - 1)
+            reference = dwell_time = steady_start = None
+            continue
         if steady_start is not None:
             continue
-        # Topic cruise_velocity and vehicle_speed_average are both m/s.
         if abs(speed - set_speed) <= 2.0 / 3.6 + 1e-9:
             if dwell_time is None:
                 dwell_time = timestamp
