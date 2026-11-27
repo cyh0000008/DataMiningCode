@@ -1,0 +1,6 @@
+# Shared Python environment for the J6B, MMT and comparison subprocesses.
+numpy
+h5py
+openpyxl
+pandas
+Pillow

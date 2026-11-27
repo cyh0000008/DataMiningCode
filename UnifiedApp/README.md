@@ -33,6 +33,25 @@
   Ubuntu 打包时会校验并记录当前机器的飞书 CLI 路径（需 1.0.99 或更新版），
   避免双击应用时因 PATH 不同调用旧版。CLI 不打进应用，搬迁或卸载后需重新指定或打包。
 
+## Ubuntu 一键更新和打包
+
+首次取得更新脚本时，在仓库根目录执行：
+
+```bash
+git pull --ff-only origin main
+bash update_linux.sh
+```
+
+后续只需在仓库根目录执行 `bash update_linux.sh`。脚本拉取 `origin/main`，
+更新 `UnifiedApp/.venv` 的挖掘/对比依赖，再调用现有 Linux 打包脚本。
+生成的程序为 `UnifiedApp/dist/UnifiedMiningApp`，旧程序备份为同目录的
+`UnifiedMiningApp.previous`，构建失败时恢复旧程序。
+本地存在未提交的受跟踪文件改动或未推送提交时，脚本会停止并说明原因。
+首次运行需要 `git`、`python3`、`python3-venv` 和网络，系统依赖安装可能提示输入 sudo 密码。
+在应用“设置 → 环境设置”中，可将三个工程的解释器设为仓库内
+`UnifiedApp/.venv/bin/python`。打包完成后关闭旧应用，再启动新程序。
+用户主目录中的预设和飞书绑定配置保持保存在原位置。
+
 ## 运行（源码方式）
 
 ```bash
