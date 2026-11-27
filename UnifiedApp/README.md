@@ -52,6 +52,11 @@ bash update_linux.sh
 `UnifiedApp/.venv/bin/python`。打包完成后关闭旧应用，再启动新程序。
 用户主目录中的预设和飞书绑定配置保持保存在原位置。
 
+Linux 打包还会生成 `UnifiedApp/dist/unified-mining.desktop`，并为当前用户安装
+“纵向数据挖掘助手”应用菜单入口，使用道路与数据波形图标。可以从应用菜单启动，
+或在文件管理器打开 `dist` 中的 `.desktop` 入口（Ubuntu 可能要求先允许启动）。
+移动仓库后重新运行打包脚本，可刷新启动入口中的绝对路径。
+
 ## 运行（源码方式）
 
 ```bash

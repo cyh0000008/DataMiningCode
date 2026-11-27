@@ -14,7 +14,9 @@ from pathlib import Path
 
 project_root = Path(SPECPATH).resolve().parent
 cli_manifest = os.environ.get("UNIFIED_LARK_CLI_MANIFEST")
-datas = [(cli_manifest, ".")] if cli_manifest else []
+datas = [(str(project_root / "assets"), "assets")]
+if cli_manifest:
+    datas.append((cli_manifest, "."))
 
 a = Analysis(
     [str(project_root / "main.py")],

@@ -210,6 +210,9 @@ if [[ ! -f "${EXE_PATH}" ]]; then
 fi
 chmod +x "${EXE_PATH}"
 
+log "安装应用图标和 Ubuntu 启动入口..."
+"${PYTHON_BIN}" "${PROJECT_ROOT}/packaging/install_linux_launcher.py" "${EXE_PATH}"
+
 log "检查当前用户的飞书远程路径授权..."
 "${PYTHON_BIN}" -m unified_app.build_remote_paths
 
