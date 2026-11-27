@@ -255,6 +255,8 @@ def generate_report_with_images(
     frame_cache = FrameCache(config, manifest)
 
     workbook = load_workbook(input_path)
+    if "信号图详情" in workbook.sheetnames:
+        del workbook["信号图详情"]
     sheet = workbook[BAD_CASE_SHEET_NAME] if BAD_CASE_SHEET_NAME in workbook.sheetnames else workbook.active
     header_map = header_columns(sheet)
     cases = read_cases(sheet, header_map)
@@ -284,9 +286,21 @@ def generate_report_with_images(
                 add_image_to_sheet(sheet, case.row_index, image_col, image_path)
                 full_image = plot_dir / image_path.name
                 shutil.copy2(image_path, full_image)
-                status_cell = sheet.cell(case.row_index, image_col + 1, "已生成；点击查看高清图")
-                status_cell.hyperlink = str(full_image.relative_to(output_path.parent))
-                status_cell.style = "Hyperlink"
+                pages = sorted(temp_dir.glob(image_path.stem + "_page*.png"))
+                if pages:
+                    details = workbook["信号图详情"] if "信号图详情" in workbook.sheetnames else workbook.create_sheet("信号图详情")
+                    details.column_dimensions["A"].width = 55
+                    details.column_dimensions["B"].width = 135
+                    for page in [image_path, *pages]:
+                        shutil.copy2(page, plot_dir / page.name)
+                        detail_row = details.max_row + 1
+                        cell = details.cell(detail_row, 1, f"Bad Case行{case.row_index} / {page.name}")
+                        add_image_to_sheet(details, detail_row, 2, page)
+                status_cell = sheet.cell(case.row_index, image_col + 1, "已生成")
+                if pages:
+                    status_cell.value += f"；共{len(pages) + 1}页，完整信号见信号图详情"
+                status_cell.hyperlink = None
+                status_cell.style = "Normal"
             except Exception as exc:
                 failures += 1
                 sheet.cell(row=case.row_index, column=image_col, value="绘图失败：%s" % exc)
@@ -443,7 +457,7 @@ def style_output_workbook(sheet: Any, image_col: int) -> None:
             sheet.cell(row=row, column=col).alignment = Alignment(vertical="center", wrap_text=True)
 
 
-def draw_case_plot(frame: SignalFrame, case: CaseRow, output_path: Path) -> None:
+def draw_case_plot(frame: SignalFrame, case: CaseRow, output_path: Path, page_panels=None) -> None:
     if frame.length < 2:
         raise ValueError("H5 信号长度不足")
     t = frame.time_s.astype(float)
@@ -456,13 +470,18 @@ def draw_case_plot(frame: SignalFrame, case: CaseRow, output_path: Path) -> None
     if int(np.sum(mask)) < 2:
         raise ValueError("case 附近可绘制采样点不足")
 
-    panels = build_panels(frame, case.metric_name, mask)
+    panels = build_panels(frame, case.metric_name, mask) if page_panels is None else page_panels
     if not panels:
         raise ValueError("没有可绘制的关键信号")
 
-    evidence = build_evidence_panel(frame, case, mask)
+    evidence = build_evidence_panel(frame, case, mask) if page_panels is None else None
     if evidence is not None:
         panels.insert(0, evidence)
+    if len(panels) > 12:
+        for index, offset in enumerate(range(0, len(panels), 12), 1):
+            page_path = output_path if index == 1 else output_path.with_name(f"{output_path.stem}_page{index:02d}.png")
+            draw_case_plot(frame, case, page_path, panels[offset:offset + 12])
+        return
     markers = evidence_markers(case)
     for panel in panels:
         panel.markers = markers
@@ -774,6 +793,23 @@ def build_panels(frame: SignalFrame, metric_name: str, mask: np.ndarray) -> List
                     line_unit = "km/h" if line.label == "非驱动轮车速" else "raw"
                 panels.append(PlotPanel(title + "：" + line.label, line_unit, [line]))
 
+    # Keep the complete preprocessed evidence available even when name-based
+    # panel selection misses a scene gate or a metric-specific dependency.
+    for field_name, raw_values in frame.fields.items():
+        if field_name in {"time_s", "time_ms"}:
+            continue
+        if field_name.lower().startswith(("abs_", "tcs_", "vcs_", "vse_")):
+            continue
+        try:
+            values = np.asarray(raw_values, dtype=float)[mask]
+        except (TypeError, ValueError):
+            continue
+        if not np.any(np.isfinite(values)):
+            continue
+        panels.append(PlotPanel(
+            "判定信号：" + field_name, "raw",
+            [PlotLine(field_name, values, (36, 104, 179), step=values.dtype == bool)],
+        ))
     return prioritize_panels(metric_name, panels)
 
 

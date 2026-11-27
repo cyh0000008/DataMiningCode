@@ -34,6 +34,10 @@ CAN_SIGNALS = {
 COLORS = ("#1677c8", "#db463f", "#19865b", "#9d55b5", "#b07716", "#487580")
 
 
+def excluded_signal(name: str) -> bool:
+    return bool(re.search(r"^(?:abs|tcs|vcs|vse)(?:_|$)|\.I?(?:ABS|TCS|VCS|VSE)", name, re.IGNORECASE))
+
+
 def numeric(value: Any) -> float:
     if value is None:
         return float("nan")
@@ -53,6 +57,8 @@ def can_series(session: Any, required_signals: list[str], origin: float,
     missing = []
     gate_range = session.common_time_range(required_signals) if unp_gate is not None else None
     for name in dict.fromkeys([*CAN_SIGNALS, *required_signals]):
+        if excluded_signal(name):
+            continue
         if not session.has_signal(name):
             missing.append(name)
             continue
@@ -72,7 +78,26 @@ def can_series(session: Any, required_signals: list[str], origin: float,
     return series, missing
 
 
-def topic_series(frames: list[dict], origin: float) -> tuple[list[PlotSeries], list[str]]:
+def topic_series(frames: list[dict], origin: float, metric_module=None) -> tuple[list[PlotSeries], list[str]]:
+    import ast
+    import inspect
+    keys_used = None
+    if metric_module is not None:
+        import longitudinal_preprocessor
+        sources = [inspect.getsource(metric_module)]
+        for name in ("is_front_clear", "is_acc_controlling", "is_driver_override", "is_non_straight_driving_scene"):
+            sources.append(inspect.getsource(getattr(longitudinal_preprocessor, name)))
+        keys_used = set()
+        for source in sources:
+            for node in ast.walk(ast.parse(source)):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get" and node.args:
+                    key = node.args[0]
+                elif isinstance(node, ast.Subscript):
+                    key = node.slice
+                else:
+                    continue
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    keys_used.add(key.value)
     definitions = [
         ("Vehicle speed", "m/s", "matched_chassis", ("vehicle_speed_average",)),
         ("Wheel acceleration", "m/s2", "matched_chassis", ("accleration_on_wheel",)),
@@ -138,6 +163,48 @@ def topic_series(frames: list[dict], origin: float) -> tuple[list[PlotSeries], l
             values = np.asarray([samples[time] for time in t], dtype=float)
             if np.any(np.isfinite(values)):
                 series.append(PlotSeries(f"Candidate {index + 1} {key}", unit, t, values))
+    # All numeric preprocessed fields remain available as evidence, including
+    # nested target candidates and the flags used by shared scene predicates.
+    def leaves(value, prefix):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key not in {"timestamp_ms", "raw_content"} and not excluded_signal(str(key)):
+                    yield from leaves(child, prefix + "." + str(key))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                yield from leaves(child, prefix + f"[{index}]")
+        elif isinstance(value, (int, float, bool)):
+            key = prefix.rsplit(".", 1)[-1]
+            if keys_used is None or key in keys_used:
+                yield prefix, numeric(value)
+
+    channels = {}
+    for frame in frames:
+        for source in ("unp_frame_data", "matched_chassis", "matched_fusion",
+                       "matched_msd_control", "matched_body", "matched_mff_info"):
+            data = frame.get(source) or {}
+            timestamp = numeric(data.get("timestamp_ms", frame.get("unp_timestamp_ms")))
+            if not np.isfinite(timestamp):
+                continue
+            for key, value in leaves(data, source):
+                channels.setdefault(key, {})[timestamp / 1000.0 - origin] = value
+    for key, samples in sorted(channels.items()):
+        axis = np.asarray(sorted(samples), dtype=float)
+        series.append(PlotSeries(key, "raw", axis, np.asarray([samples[t] for t in axis])))
+    road_samples = dict(sample for frame in frames for sample in frame.get("_road_excitation_samples", []))
+    if road_samples:
+        axis = np.asarray(sorted(road_samples), dtype=float)
+        series.append(PlotSeries("/mla/egopose.acceleration.acceleration_local.az * 9.81", "m/s2",
+                                 axis / 1000.0 - origin,
+                                 np.asarray([road_samples[t] * 9.81 for t in axis])))
+        for label, value in (("Road lower threshold", 8.31), ("Road upper threshold", 11.31)):
+            series.append(PlotSeries(label, "m/s2", axis / 1000.0 - origin, np.full(len(axis), value)))
+        from road_excitation import exclusion_mask
+        axis = np.asarray([frame["unp_timestamp_ms"] for frame in frames], dtype=float)
+        series.append(PlotSeries("Road excitation exclusion (+/-2.5s)", "state", axis / 1000.0 - origin,
+                                 np.asarray(exclusion_mask(axis, list(road_samples.items())), dtype=float)))
+    else:
+        missing.append("/mla/egopose.acceleration.acceleration_local.az")
     return series, missing
 
 
@@ -165,6 +232,11 @@ def plot_font() -> ImageFont.ImageFont:
 
 
 def draw_overview(series: list[PlotSeries], title: str, spans: list[tuple[float, float]], path: Path) -> None:
+    if len(series) > 18:
+        for index, start_index in enumerate(range(0, len(series), 18), 1):
+            page_path = path if index == 1 else path.with_name(f"{path.stem}_page{index:02d}.png")
+            draw_overview(series[start_index:start_index + 18], f"{title} | page {index}", spans, page_path)
+        return
     available = [item for item in series if np.count_nonzero(
         np.isfinite(item.time_s) & np.isfinite(item.values)) >= 2]
     if not available:
@@ -172,8 +244,10 @@ def draw_overview(series: list[PlotSeries], title: str, spans: list[tuple[float,
     groups: dict[str, list[PlotSeries]] = {}
     for item in available:
         groups.setdefault(item.unit, []).append(item)
-    panels = [(unit, items[index:index + 3]) for unit, items in groups.items()
-              for index in range(0, len(items), 3)]
+    panels = []
+    for unit, items in groups.items():
+        count = 1 if unit == "raw" else 3
+        panels.extend((unit, items[index:index + count]) for index in range(0, len(items), count))
     width, panel_height = 1500, 260
     image = Image.new("RGB", (width, 110 + len(panels) * panel_height), "#f6f8fc")
     draw = ImageDraw.Draw(image)
@@ -259,8 +333,25 @@ def embed_plots(sheet: Any, rows: list[dict], load_series: Callable[[dict], tupl
             image.width *= scale
             image.height *= scale
             sheet.add_image(image, f"K{index}")
+            pages = sorted(directory.glob(path.stem + "_page*.png"))
+            if pages:
+                book = sheet.parent
+                details = book["信号图详情"] if "信号图详情" in book.sheetnames else book.create_sheet("信号图详情")
+                details.column_dimensions["A"].width = 55
+                details.column_dimensions["B"].width = 125
+                for page in [path, *pages]:
+                    detail_row = details.max_row + 1
+                    cell = details.cell(detail_row, 1, f"Bad Case行{index} / {page.name}")
+                    page_image = ExcelImage(page)
+                    ratio = min(880 / page_image.width, 520 / page_image.height)
+                    page_image.width *= ratio
+                    page_image.height *= ratio
+                    details.add_image(page_image, f"B{detail_row}")
+                    details.row_dimensions[detail_row].height = page_image.height * .75
             sheet.row_dimensions[index].height = image.height * .75
             status = "已生成；文件夹整段概览（非单事件判定图）"
+            if pages:
+                status += f"；共{len(pages) + 1}页，完整信号见信号图详情"
             if missing:
                 status += "；缺少信号或有效采样不足：" + "、".join(missing)
             sheet.cell(index, 12, status)

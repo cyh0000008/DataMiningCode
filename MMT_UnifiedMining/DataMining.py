@@ -1185,7 +1185,7 @@ def make_plot_loader(config: UnifiedConfig, metrics_by_pipeline: dict[str, list[
                 metric, normalize_cross_done_names(pipeline.cross_done_metric_names))):
             frames = build_two_done_frames(frames, folder, load_topic_frames_cached(next_folder),
                                           next_folder, pipeline.cross_done_context_seconds)
-        return topic_series(frames, origin)
+        return topic_series(frames, origin, metric.module)
 
     return load
 
@@ -1770,6 +1770,8 @@ def run_topic_metric_with_shared_scenes(
     frames: list[dict[str, Any]],
     scene_cache: dict[tuple[str, int], tuple[list[dict[str, Any]], Any]],
 ) -> Any:
+    from road_excitation import refresh_road_excitation
+    refresh_road_excitation(frames)
     extractor = getattr(metric.module, "_find_risk_segments", None)
     fingerprint = topic_scene_fingerprint(metric.module)
     if not callable(extractor) or fingerprint is None:

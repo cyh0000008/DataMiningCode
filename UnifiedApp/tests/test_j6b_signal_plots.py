@@ -146,11 +146,11 @@ with tempfile.TemporaryDirectory() as folder:
         assert build_evidence_panel(frame, mpi, np.ones(t.size, dtype=bool)) is None
         for case in cases:
             assert ws.cell(case.row_index, headers["绘图状态"]).value.startswith("已生成")
-            assert (report.parent / ws.cell(case.row_index, headers["绘图状态"]).hyperlink.target).is_file()
+            assert ws.cell(case.row_index, headers["绘图状态"]).hyperlink is None
     finally:
         wb.close()
     with ZipFile(report) as archive:
-        assert len([name for name in archive.namelist() if name.startswith("xl/media/")]) == 2
+        assert len([name for name in archive.namelist() if name.startswith("xl/media/")]) > 2
     generate_report_with_images(report, report, config=config)
     repeated = load_workbook(report)
     try:

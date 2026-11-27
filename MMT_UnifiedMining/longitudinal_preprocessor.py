@@ -1478,4 +1478,10 @@ def process_comprehensive_frames(bag_path) -> List[Dict]:
             folder_path=bag_path
         )
 
+    from road_excitation import mark_road_excitation
+    mark_road_excitation(comprehensive_frames, bag_path)
     return comprehensive_frames
+
+
+def is_road_excitation_clear(comp_frame: Dict) -> bool:
+    return not comp_frame.get("_road_excitation_excluded", False)

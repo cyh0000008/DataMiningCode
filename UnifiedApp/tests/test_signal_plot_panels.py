@@ -98,8 +98,9 @@ with tempfile.TemporaryDirectory() as folder:
     draw_case_plot(frame, case, path)
     with Image.open(path) as image:
         count = len(build_panels(frame, name, mask))
-        assert image.height >= 180 + count * 240
+        assert image.height >= 180 + min(count, 12) * 240
         image.verify()
+    assert len(list(Path(folder).glob("separate_panels*.png"))) == (count + 11) // 12
 '''],
             cwd=ROOT / "J6B_UnifiedMining",
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},

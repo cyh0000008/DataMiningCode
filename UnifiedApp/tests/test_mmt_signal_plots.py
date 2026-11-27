@@ -115,7 +115,9 @@ with tempfile.TemporaryDirectory() as folder:
                                                     {"id": 8, "x": 30., "ttc": 12.}]},
     } for timestamp, acc in zip(t, np.sin(t * 3))]
     topic, missing = topic_series(frames + [frames[-1]], 100.)
-    assert not missing, missing
+    assert missing == ["/mla/egopose.acceleration.acceleration_local.az"], missing
+    assert any(item.label == "matched_chassis.vehicle_speed_average" for item in topic)
+    assert not any(item.label.startswith("matched_chassis.abs_") for item in topic)
     total = next(item for item in topic if item.label.startswith("Total acceleration"))
     np.testing.assert_allclose(total.values, np.sin(t * 3) + .2)
     assert len(total.time_s) == len(t)  # Repeated chassis references do not duplicate samples.
@@ -161,12 +163,12 @@ with tempfile.TemporaryDirectory() as folder:
     finally:
         wb.close()
     with ZipFile(report) as xlsx:
-        assert len([name for name in xlsx.namelist() if name.startswith("xl/media/")]) == 2
+        assert len([name for name in xlsx.namelist() if name.startswith("xl/media/")]) > 2
     bundle = bundle_reports([report], work / "zip", "TEST", "V1")
     with ZipFile(bundle) as archive:
         import io
         with ZipFile(io.BytesIO(archive.read(report.name))) as xlsx:
-            assert len([name for name in xlsx.namelist() if name.startswith("xl/media/")]) == 2
+            assert len([name for name in xlsx.namelist() if name.startswith("xl/media/")]) > 2
     # Disabled mode preserves the original ten-column report, with no image data.
     stamp = report.stem.removeprefix("bad_case_report_")
     plain = generate_bad_case_extract_report(cfg.output_dir, stamp, load_bad_case_extract_config(rules_path))

@@ -138,7 +138,7 @@ def _get_frame_risk_params(comp_para: Dict) -> Dict:
     velocity = matched_chassis.get("vehicle_speed_average", 0) if matched_chassis else 0
     
     # 获取UNP相关参数
-    f_np_on = lonprepro.is_acc_controlling(comp_para)
+    f_np_on = lonprepro.is_acc_controlling(comp_para) and lonprepro.is_road_excitation_clear(comp_para)
 
     is_non_straight_driving = _is_non_straight_driving_scene(unp_frame_data)
     traffic_light = unp_frame_data.get("TrafficLight", {})

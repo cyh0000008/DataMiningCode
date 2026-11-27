@@ -159,7 +159,7 @@ def _get_frame_risk_params(comp_frame: Dict) -> Dict:
     acceleration = matched_chassis.get("accleration_on_wheel", 0) if matched_chassis else 0
     
     # 获取UNP相关参数（逻辑完全不变）
-    f_np_on = lonprepro.is_acc_controlling(comp_frame)
+    f_np_on = lonprepro.is_acc_controlling(comp_frame) and lonprepro.is_road_excitation_clear(comp_frame)
 
     is_non_straight_driving = _is_non_straight_driving_scene(unp_frame_data)
     traffic_light = unp_frame_data.get("TrafficLight", {})
